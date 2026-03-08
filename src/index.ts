@@ -188,7 +188,7 @@ function readFromTTY(
       // Redraw
       w(lines[fromRow]);
       for (let i = fromRow + 1; i < lines.length; i++) {
-        w("\n" + (i === 0 ? prompt : linePrompt) + lines[i]);
+        w("\n" + linePrompt + lines[i]);
       }
 
       // Move terminal cursor to target position
@@ -219,17 +219,20 @@ function readFromTTY(
       redrawFrom(row, row + 1, 0);
     }
 
+    // Redraw current line after deleting characters of the given display width at cursor
+    function redrawAfterDelete(deletedWidth: number) {
+      const rest = lines[row].slice(col);
+      const restW = stringWidth(rest);
+      w(`\x1b[${deletedWidth}D${rest}${" ".repeat(deletedWidth)}\x1b[${restW + deletedWidth}D`);
+    }
+
     function handleBackspace() {
       if (col > 0) {
         const deleted = charBeforeIndex(lines[row], col);
-        const dw = charWidth(deleted.codePointAt(0)!);
         col -= deleted.length;
         lines[row] =
           lines[row].slice(0, col) + lines[row].slice(col + deleted.length);
-        const rest = lines[row].slice(col);
-        const restW = stringWidth(rest);
-        // Move back by deleted char width, redraw rest, clear trailing artifact
-        w(`\x1b[${dw}D${rest}${" ".repeat(dw)}\x1b[${restW + dw}D`);
+        redrawAfterDelete(charWidth(deleted.codePointAt(0)!));
       } else if (row > 0) {
         const prevLen = lines[row - 1].length;
         lines[row - 1] += lines[row];
@@ -258,9 +261,7 @@ function readFromTTY(
       const deletedWidth = stringWidth(line.slice(c, col));
       lines[row] = line.slice(0, c) + line.slice(col);
       col = c;
-      const rest = lines[row].slice(col);
-      const restW = stringWidth(rest);
-      w(`\x1b[${deletedWidth}D${rest}${" ".repeat(deletedWidth)}\x1b[${restW + deletedWidth}D`);
+      redrawAfterDelete(deletedWidth);
     }
 
     // --- Cursor movement ---
@@ -306,16 +307,17 @@ function readFromTTY(
         c = col;
       // Skip non-word characters
       while (r < lines.length) {
-        while (c < lines[r].length && !isWordChar(lines[r][c])) c++;
-        if (c < lines[r].length) break;
+        const line = lines[r];
+        while (c < line.length && !isWordChar(line[c])) c++;
+        if (c < line.length) break;
         if (r < lines.length - 1) {
           r++;
           c = 0;
         } else break;
       }
       // Skip word characters
-      while (r < lines.length && c < lines[r].length && isWordChar(lines[r][c]))
-        c++;
+      const line = lines[r];
+      while (c < line.length && isWordChar(line[c])) c++;
 
       if (r !== row || c !== col) moveTo(r, c);
     }
@@ -338,8 +340,9 @@ function readFromTTY(
 
       // Skip non-word characters
       while (true) {
-        while (c > 0 && !isWordChar(lines[r][c])) c--;
-        if (isWordChar(lines[r][c])) break;
+        let line = lines[r];
+        while (c > 0 && !isWordChar(line[c])) c--;
+        if (isWordChar(line[c])) break;
         if (r > 0) {
           r--;
           c = lines[r].length - 1;
@@ -353,7 +356,8 @@ function readFromTTY(
         }
       }
       // Skip word characters
-      while (c > 0 && isWordChar(lines[r][c - 1])) c--;
+      const line = lines[r];
+      while (c > 0 && isWordChar(line[c - 1])) c--;
 
       moveTo(r, c);
     }
@@ -444,6 +448,10 @@ function readFromTTY(
     w("\x1b[?2004h"); // Enable bracketed paste mode
 
     function cleanup() {
+      if (escTimer) {
+        clearTimeout(escTimer);
+        escTimer = null;
+      }
       w("\x1b[?2004l"); // Disable bracketed paste mode
       w("\x1b[<u"); // Disable kitty protocol
       input.setRawMode?.(false);
@@ -499,7 +507,7 @@ function readFromTTY(
 
     function processPaste(text: string) {
       // Normalize line endings: \r\n -> \n, \r -> \n
-      const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      const normalized = text.replace(/\r\n|\r/g, "\n");
       for (const ch of normalized) {
         if (ch === "\n") {
           insertNewline();
