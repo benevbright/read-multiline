@@ -1,0 +1,658 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { EventEmitter } from "node:events";
+import { Readable } from "node:stream";
+import {
+  readMultiline,
+  CancelError,
+  EOFError,
+  type TTYInput,
+} from "../src/index.js";
+
+// Dummy output stream that records writes
+function createNullOutput() {
+  const chunks: string[] = [];
+  const stream = {
+    write(data: string) {
+      chunks.push(data);
+      return true;
+    },
+  } as NodeJS.WritableStream;
+  return { stream, chunks };
+}
+
+// Helper to simulate TTY input
+function createTTYInput(): TTYInput &
+  EventEmitter & { send: (data: string) => void } {
+  const emitter = new EventEmitter() as TTYInput &
+    EventEmitter & { send: (data: string) => void };
+  emitter.isTTY = true;
+  emitter.setRawMode = vi.fn();
+  emitter.resume = vi.fn();
+  emitter.pause = vi.fn();
+  emitter.read = vi.fn();
+
+  emitter.send = (data: string) => {
+    emitter.emit("data", Buffer.from(data));
+  };
+
+  return emitter;
+}
+
+// Key sequence constants
+const KEY = {
+  ENTER: "\r",
+  KITTY_ENTER: "\x1b[13u",
+  SHIFT_ENTER: "\x1b[13;2u",
+  BACKSPACE: "\x7f",
+  CTRL_C: "\x03",
+  CTRL_D: "\x04",
+  CTRL_W: "\x17",
+  UP: "\x1b[A",
+  DOWN: "\x1b[B",
+  RIGHT: "\x1b[C",
+  LEFT: "\x1b[D",
+  ALT_RIGHT: "\x1b[1;3C",
+  ALT_LEFT: "\x1b[1;3D",
+  CTRL_RIGHT: "\x1b[1;5C",
+  CTRL_LEFT: "\x1b[1;5D",
+  ESC_B: "\x1bb",
+  ESC_F: "\x1bf",
+  CMD_LEFT: "\x1b[1;9D",
+  CMD_RIGHT: "\x1b[1;9C",
+  CMD_UP: "\x1b[1;9A",
+  CMD_DOWN: "\x1b[1;9B",
+  HOME: "\x1b[H",
+  END: "\x1b[F",
+};
+
+describe("readMultiline (TTY mode)", () => {
+  let input: ReturnType<typeof createTTYInput>;
+  let output: ReturnType<typeof createNullOutput>;
+
+  beforeEach(() => {
+    input = createTTYInput();
+    output = createNullOutput();
+  });
+
+  // --- Basic operations ---
+
+  it("submits input on Enter", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello");
+  });
+
+  it("inserts newline on Shift+Enter and submits on Enter", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("line2");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("line1\nline2");
+  });
+
+  it("handles multiple Shift+Enter for multi-line input", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("a");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("b");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("c");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("a\nb\nc");
+  });
+
+  it("throws CancelError on Ctrl+C", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("partial");
+    input.send(KEY.CTRL_C);
+    await expect(promise).rejects.toThrow(CancelError);
+  });
+
+  it("throws CancelError on Ctrl+C with no input", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send(KEY.CTRL_C);
+    await expect(promise).rejects.toThrow(CancelError);
+  });
+
+  it("submits on Ctrl+D when input exists", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("text");
+    input.send(KEY.CTRL_D);
+    expect(await promise).toBe("text");
+  });
+
+  it("throws EOFError on Ctrl+D when input is empty", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send(KEY.CTRL_D);
+    await expect(promise).rejects.toThrow(EOFError);
+  });
+
+  it("returns empty string on Enter with no input", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("");
+  });
+
+  it("submits on kitty protocol Enter (CSI 13u)", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("test");
+    input.send(KEY.KITTY_ENTER);
+    expect(await promise).toBe("test");
+  });
+
+  // --- Backspace ---
+
+  it("deletes the last character on Backspace", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("ab");
+  });
+
+  it("merges lines on Backspace at line start", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("line1");
+  });
+
+  // --- Ctrl+W (word deletion) ---
+
+  it("deletes the previous word on Ctrl+W", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello world");
+    input.send(KEY.CTRL_W);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello ");
+  });
+
+  it("deletes trailing whitespace and word on Ctrl+W", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello  world  ");
+    input.send(KEY.CTRL_W);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello  ");
+  });
+
+  it("deletes the entire line if it is a single word on Ctrl+W", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send(KEY.CTRL_W);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("");
+  });
+
+  it("merges with previous line on Ctrl+W at line start", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.SHIFT_ENTER);
+    input.send(KEY.CTRL_W);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc");
+  });
+
+  it("deletes word from cursor mid-position on Ctrl+W", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("foo bar baz");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT); // foo bar |baz
+    input.send(KEY.CTRL_W); // delete " bar" -> "foo |baz"
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("foo baz");
+  });
+
+  it("deletes full-width word on Ctrl+W", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello \u3042\u3044\u3046");
+    input.send(KEY.CTRL_W);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello ");
+  });
+
+  // --- Backspace (additional) ---
+
+  it("deletes character at cursor mid-position on Backspace", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.LEFT); // ab|c
+    input.send(KEY.BACKSPACE); // a|c
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("ac");
+  });
+
+  // --- Shift+Enter line splitting ---
+
+  it("splits line at cursor position on Shift+Enter", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abcd");
+    input.send(KEY.LEFT); // abc|d
+    input.send(KEY.LEFT); // ab|cd
+    input.send(KEY.SHIFT_ENTER);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("ab\ncd");
+  });
+
+  // --- Arrow key movement ---
+
+  it("moves left and inserts character", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("ac");
+    input.send(KEY.LEFT); // a|c
+    input.send("b");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc");
+  });
+
+  it("moves right after moving left", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT); // a|bc
+    input.send(KEY.RIGHT); // ab|c
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abXc");
+  });
+
+  it("crosses to previous line end on Left at line start", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("ab");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("cd");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT); // line 2 start
+    input.send(KEY.LEFT); // line 1 end (ab|)
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abX\ncd");
+  });
+
+  it("crosses to next line start on Right at line end", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("ab");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("cd");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT); // line 1 end
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT); // line 1 start (|ab)
+    input.send(KEY.RIGHT);
+    input.send(KEY.RIGHT); // line 1 end (ab|)
+    input.send(KEY.RIGHT); // line 2 start (|cd)
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("ab\nXcd");
+  });
+
+  it("moves up to previous line", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("de");
+    input.send(KEY.UP); // line 1, col=min(2, 3)=2 -> ab|c
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abXc\nde");
+  });
+
+  it("moves down to next line", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("de");
+    input.send(KEY.UP);
+    input.send(KEY.DOWN); // line 2, col=min(2, 2)=2 -> de|
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc\ndeX");
+  });
+
+  it("clamps column to line end when moving up to a shorter line", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("ab");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("cdefg");
+    input.send(KEY.UP); // line 1, col=min(5, 2)=2 -> ab|
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abX\ncdefg");
+  });
+
+  // --- Alt+Arrow (word jump) ---
+
+  it("jumps to word end on Alt+Right", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello world");
+    for (let i = 0; i < 11; i++) input.send(KEY.LEFT);
+    input.send(KEY.ALT_RIGHT); // hello|
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("helloX world");
+  });
+
+  it("jumps to word start on Alt+Left", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello world");
+    input.send(KEY.ALT_LEFT); // |world
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello Xworld");
+  });
+
+  it("crosses to next line on Alt+Right at line end", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("ab");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("cd");
+    input.send(KEY.UP);
+    input.send(KEY.CMD_RIGHT); // line end
+    input.send(KEY.ALT_RIGHT); // next line word end
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("ab\ncdX");
+  });
+
+  it("crosses to previous line on Alt+Left at line start", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("ab");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("cd");
+    input.send(KEY.CMD_LEFT); // line 2 start
+    input.send(KEY.ALT_LEFT); // previous line
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("Xab\ncd");
+  });
+
+  // --- Ctrl+Arrow (word jump) ---
+
+  it("jumps to word end on Ctrl+Right", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello world");
+    for (let i = 0; i < 11; i++) input.send(KEY.LEFT);
+    input.send(KEY.CTRL_RIGHT); // hello|
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("helloX world");
+  });
+
+  it("jumps to word start on Ctrl+Left", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello world");
+    input.send(KEY.CTRL_LEFT); // |world
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello Xworld");
+  });
+
+  // --- ESC+b/f (macOS Option+Arrow fallback) ---
+
+  it("jumps to word start on ESC+b", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello world");
+    input.send(KEY.ESC_B); // |world
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello Xworld");
+  });
+
+  it("jumps to word end on ESC+f", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello world");
+    for (let i = 0; i < 11; i++) input.send(KEY.LEFT);
+    input.send(KEY.ESC_F); // hello|
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("helloX world");
+  });
+
+  // --- Cmd+Arrow (line start/end, buffer start/end) ---
+
+  it("moves to line start on Cmd+Left", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send(KEY.CMD_LEFT); // |hello
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("Xhello");
+  });
+
+  it("moves to line end on Cmd+Right", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT); // hel|lo
+    input.send(KEY.CMD_RIGHT); // hello|
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("helloX");
+  });
+
+  it("moves to buffer start on Cmd+Up", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("line2");
+    input.send(KEY.CMD_UP); // |line1
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("Xline1\nline2");
+  });
+
+  it("moves to buffer end on Cmd+Down", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("line2");
+    input.send(KEY.CMD_UP);
+    input.send(KEY.CMD_DOWN); // line2|
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("line1\nline2X");
+  });
+
+  it("Home/End keys work as line start/end", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send(KEY.HOME); // |hello
+    input.send("A");
+    input.send(KEY.END); // Ahello|
+    input.send("Z");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("AhelloZ");
+  });
+
+  // --- Protocol / Settings ---
+
+  it("enables and disables raw mode", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    expect(input.setRawMode).toHaveBeenCalledWith(true);
+    input.send(KEY.ENTER);
+    await promise;
+    expect(input.setRawMode).toHaveBeenCalledWith(false);
+  });
+
+  it("enables and disables kitty keyboard protocol", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    expect(output.chunks).toContain("\x1b[>1u");
+    input.send(KEY.ENTER);
+    await promise;
+    expect(output.chunks).toContain("\x1b[<u");
+  });
+
+  it("displays the prompt", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      prompt: "> ",
+    });
+    expect(output.chunks[0]).toBe("> ");
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  it("displays linePrompt on continuation lines", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      prompt: "> ",
+      linePrompt: "... ",
+    });
+    input.send("a");
+    input.send(KEY.SHIFT_ENTER);
+    expect(output.chunks.join("")).toContain("\n... ");
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  it("ignores unknown escape sequences", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("ab");
+    input.send("\x1b[99~");
+    input.send("c");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc");
+  });
+
+  // --- Full-width characters ---
+
+  it("handles full-width character input", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\u3042\u3044\u3046");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("\u3042\u3044\u3046");
+  });
+
+  it("inserts at cursor position between full-width characters", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\u3042\u3046");
+    input.send(KEY.LEFT); // \u3042|\u3046
+    input.send("\u3044");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("\u3042\u3044\u3046");
+  });
+
+  it("deletes full-width character on Backspace", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\u3042\u3044\u3046");
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("\u3042\u3044");
+  });
+
+  it("deletes full-width character at cursor mid-position on Backspace", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\u3042\u3044\u3046");
+    input.send(KEY.LEFT); // \u3042\u3044|\u3046
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("\u3042\u3046");
+  });
+
+  it("moves correctly with Left/Right on full-width characters", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\u3042\u3044\u3046");
+    input.send(KEY.LEFT); // \u3042\u3044|\u3046
+    input.send(KEY.LEFT); // \u3042|\u3044\u3046
+    input.send(KEY.RIGHT); // \u3042\u3044|\u3046
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("\u3042\u3044X\u3046");
+  });
+
+  it("handles mixed half-width and full-width characters", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("a\u3042b");
+    input.send(KEY.LEFT); // a\u3042|b
+    input.send(KEY.LEFT); // a|\u3042b
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("aX\u3042b");
+  });
+
+  // --- Paste ---
+
+  it("handles multi-line paste", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\x1b[200~line1\nline2\nline3\x1b[201~");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("line1\nline2\nline3");
+  });
+
+  it("normalizes \\r\\n line endings in paste", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\x1b[200~line1\r\nline2\r\nline3\x1b[201~");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("line1\nline2\nline3");
+  });
+
+  it("pastes into existing input at cursor position", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("before");
+    input.send("\x1b[200~pasted1\npasted2\x1b[201~");
+    input.send("after");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("beforepasted1\npasted2after");
+  });
+
+  it("treats \\r in paste as newline, not submit", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\x1b[200~a\rb\x1b[201~");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("a\nb");
+  });
+
+  it("handles paste data split across multiple events", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\x1b[200~hello\n");
+    input.send("world\x1b[201~");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello\nworld");
+  });
+
+  it("continues key operations after paste", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\x1b[200~abc\x1b[201~");
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("ab");
+  });
+
+  // --- Full-width characters (additional) ---
+
+  it("Cmd+Left/Right works with full-width characters", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\u3042\u3044\u3046");
+    input.send(KEY.CMD_LEFT); // |\u3042\u3044\u3046
+    input.send("X");
+    input.send(KEY.CMD_RIGHT); // X\u3042\u3044\u3046|
+    input.send("Y");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("X\u3042\u3044\u3046Y");
+  });
+});
+
+describe("readMultiline (pipe mode)", () => {
+  it("reads all lines until EOF from pipe input", async () => {
+    const input = Readable.from(["line1\nline2\nline3\n"]) as TTYInput;
+    input.isTTY = false;
+    const { stream } = createNullOutput();
+    expect(await readMultiline({ input, output: stream })).toBe(
+      "line1\nline2\nline3",
+    );
+  });
+
+  it("returns input without trailing newline from pipe", async () => {
+    const input = Readable.from(["hello\nworld"]) as TTYInput;
+    input.isTTY = false;
+    const { stream } = createNullOutput();
+    expect(await readMultiline({ input, output: stream })).toBe("hello\nworld");
+  });
+});
