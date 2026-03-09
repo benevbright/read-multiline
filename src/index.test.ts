@@ -6,7 +6,7 @@ import {
   CancelError,
   EOFError,
   type TTYInput,
-} from "../src/index.js";
+} from "./index.js";
 
 // Dummy output stream that records writes
 function createNullOutput() {
@@ -637,6 +637,256 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ENTER);
     expect(await promise).toBe("X\u3042\u3044\u3046Y");
   });
+
+  // --- ANSI output correctness ---
+
+  it("writes correct ANSI cursor position for full-width characters", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      prompt: "> ",
+    });
+    input.send("\u3042"); // 2-column wide char
+    input.send(KEY.LEFT); // should move back 2 columns
+    const joined = output.chunks.join("");
+    // Left on a full-width char emits ESC[2D (move left 2 columns)
+    expect(joined).toContain("\x1b[2D");
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  it("writes correct ANSI cursor column with prompt offset on moveTo", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      prompt: ">>> ",
+    });
+    input.send("ab");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("cd");
+    input.send(KEY.UP); // moveTo(0, min(2,2)) -> column = 4 + width("ab") + 1 = 7
+    const joined = output.chunks.join("");
+    expect(joined).toContain("\x1b[7G");
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  // --- ESC buffering ---
+
+  it("combines split ESC sequence via buffering", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello world");
+    // Simulate ESC arriving separately from the rest of the sequence (ESC+b = wordLeft)
+    input.send("\x1b");
+    // After a short delay, send the rest
+    await new Promise((r) => setTimeout(r, 10));
+    input.send("b"); // should combine to \x1bb = wordLeft -> |world
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello Xworld");
+  });
+
+  it("flushes standalone ESC after timeout", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send("\x1b");
+    // Wait longer than ESC_TIMEOUT (50ms)
+    await new Promise((r) => setTimeout(r, 80));
+    // ESC alone should be flushed and discarded (no keyMap match)
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abcX");
+  });
+
+  // --- Kitty protocol key variants ---
+
+  it("handles kitty Ctrl+C (CSI 99;5u)", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("text");
+    input.send("\x1b[99;5u");
+    await expect(promise).rejects.toThrow(CancelError);
+  });
+
+  it("handles kitty Ctrl+D (CSI 100;5u) with input", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("text");
+    input.send("\x1b[100;5u");
+    expect(await promise).toBe("text");
+  });
+
+  it("handles kitty Ctrl+D (CSI 100;5u) on empty input", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\x1b[100;5u");
+    await expect(promise).rejects.toThrow(EOFError);
+  });
+
+  it("handles kitty Ctrl+W (CSI 119;5u)", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello world");
+    input.send("\x1b[119;5u");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello ");
+  });
+
+  it("handles kitty Ctrl+A (CSI 97;5u) as line start", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send("\x1b[97;5u"); // line start
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("Xhello");
+  });
+
+  it("handles kitty Ctrl+E (CSI 101;5u) as line end", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send("\x1b[101;5u"); // line end
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("helloX");
+  });
+
+  // --- Edge cases: boundary no-ops ---
+
+  it("does nothing on Backspace at start of first line", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send(KEY.BACKSPACE);
+    input.send("abc");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc");
+  });
+
+  it("does nothing on Up at first line", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.UP);
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abcX");
+  });
+
+  it("does nothing on Down at last line", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.DOWN);
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abcX");
+  });
+
+  it("does nothing on Left at start of first line", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.CMD_LEFT);
+    input.send(KEY.LEFT); // already at absolute start
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("Xabc");
+  });
+
+  it("does nothing on Right at end of last line", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.RIGHT); // already at end
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abcX");
+  });
+
+  it("does nothing on Cmd+Left when already at line start", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.CMD_LEFT);
+    input.send(KEY.CMD_LEFT); // already at start
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("Xabc");
+  });
+
+  it("does nothing on Cmd+Right when already at line end", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.CMD_RIGHT); // already at end
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abcX");
+  });
+
+  it("Ctrl+W on empty line does nothing", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send(KEY.CTRL_W);
+    input.send("abc");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc");
+  });
+
+  // --- Surrogate pair characters (emoji) ---
+
+  it("handles surrogate pair character input", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("a\u{1F600}b"); // 😀
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("a\u{1F600}b");
+  });
+
+  it("deletes surrogate pair character on Backspace", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("a\u{1F600}b");
+    input.send(KEY.BACKSPACE); // delete b
+    input.send(KEY.BACKSPACE); // delete 😀
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("a");
+  });
+
+  it("moves cursor correctly around surrogate pair characters", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("a\u{1F600}b");
+    input.send(KEY.LEFT); // a😀|b
+    input.send(KEY.LEFT); // a|😀b
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("aX\u{1F600}b");
+  });
+
+  // --- Cleanup ---
+
+  it("enables and disables bracketed paste mode", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    expect(output.chunks).toContain("\x1b[?2004h");
+    input.send(KEY.ENTER);
+    await promise;
+    expect(output.chunks).toContain("\x1b[?2004l");
+  });
+
+  it("clears escTimer on cleanup", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send("\x1b"); // start ESC buffering with timer
+    // Wait for the ESC timer to flush (50ms), then cancel normally
+    await new Promise((r) => setTimeout(r, 80));
+    input.send(KEY.CTRL_C);
+    await expect(promise).rejects.toThrow(CancelError);
+    // If escTimer wasn't properly handled, the timer would fire after cleanup
+    // and potentially cause errors. This test verifies cleanup completes cleanly.
+  });
+
+  // --- linePrompt default ---
+
+  it("uses prompt as default linePrompt when linePrompt is not specified", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      prompt: ">> ",
+    });
+    input.send("a");
+    input.send(KEY.SHIFT_ENTER);
+    const joined = output.chunks.join("");
+    expect(joined).toContain("\n>> ");
+    input.send(KEY.ENTER);
+    await promise;
+  });
 });
 
 describe("readMultiline (pipe mode)", () => {
@@ -651,6 +901,20 @@ describe("readMultiline (pipe mode)", () => {
 
   it("returns input without trailing newline from pipe", async () => {
     const input = Readable.from(["hello\nworld"]) as TTYInput;
+    input.isTTY = false;
+    const { stream } = createNullOutput();
+    expect(await readMultiline({ input, output: stream })).toBe("hello\nworld");
+  });
+
+  it("returns empty string on immediate EOF from pipe", async () => {
+    const input = Readable.from([]) as TTYInput;
+    input.isTTY = false;
+    const { stream } = createNullOutput();
+    expect(await readMultiline({ input, output: stream })).toBe("");
+  });
+
+  it("handles pipe data split across multiple chunks", async () => {
+    const input = Readable.from(["hel", "lo\nwor", "ld"]) as TTYInput;
     input.isTTY = false;
     const { stream } = createNullOutput();
     expect(await readMultiline({ input, output: stream })).toBe("hello\nworld");
