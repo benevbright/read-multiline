@@ -14,7 +14,7 @@
   "author": "",
   "repository": {
     "type": "git",
-    "url": "https://github.com/toiroakr/read-multiline.git"
+    "url": "git+https://github.com/toiroakr/read-multiline.git"
   },
   "files": [
     "dist"
