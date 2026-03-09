@@ -44,15 +44,21 @@ const KEY = {
   KITTY_ENTER: "\x1b[13u",
   SHIFT_ENTER: "\x1b[13;2u",
   BACKSPACE: "\x7f",
+  DELETE: "\x1b[3~",
   CTRL_C: "\x03",
   CTRL_D: "\x04",
   CTRL_W: "\x17",
+  CTRL_U: "\x15",
+  CTRL_K: "\x0b",
+  CTRL_L: "\x0c",
   UP: "\x1b[A",
   DOWN: "\x1b[B",
   RIGHT: "\x1b[C",
   LEFT: "\x1b[D",
   ALT_RIGHT: "\x1b[1;3C",
   ALT_LEFT: "\x1b[1;3D",
+  ALT_UP: "\x1b[1;3A",
+  ALT_DOWN: "\x1b[1;3B",
   CTRL_RIGHT: "\x1b[1;5C",
   CTRL_LEFT: "\x1b[1;5D",
   ESC_B: "\x1bb",
@@ -886,6 +892,494 @@ describe("readMultiline (TTY mode)", () => {
     expect(joined).toContain("\n>> ");
     input.send(KEY.ENTER);
     await promise;
+  });
+
+  // --- Delete key (forward delete) ---
+
+  it("deletes the character ahead on Delete", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.LEFT); // ab|c
+    input.send(KEY.DELETE); // ab|
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("ab");
+  });
+
+  it("merges next line on Delete at line end", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("ab");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("cd");
+    input.send(KEY.UP);
+    input.send(KEY.CMD_RIGHT); // end of line 1: ab|
+    input.send(KEY.DELETE); // merge: abcd|
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abcd");
+  });
+
+  it("does nothing on Delete at end of last line", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.DELETE);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc");
+  });
+
+  it("deletes full-width character on Delete", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("\u3042\u3044\u3046");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT); // あ|いう
+    input.send(KEY.DELETE); // あ|う
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("\u3042\u3046");
+  });
+
+  // --- Ctrl+U (delete to line start) ---
+
+  it("deletes from cursor to line start on Ctrl+U", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello world");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT); // hello |world
+    input.send(KEY.CTRL_U); // |world
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("world");
+  });
+
+  it("does nothing on Ctrl+U at line start", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.CMD_LEFT);
+    input.send(KEY.CTRL_U);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc");
+  });
+
+  // --- Ctrl+K (delete to line end) ---
+
+  it("deletes from cursor to line end on Ctrl+K", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello world");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT); // hello |world
+    input.send(KEY.CTRL_K); // hello |
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello ");
+  });
+
+  it("does nothing on Ctrl+K at line end", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.CTRL_K);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc");
+  });
+
+  // --- initialValue ---
+
+  it("pre-populates input with initialValue", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      initialValue: "hello",
+    });
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello");
+  });
+
+  it("pre-populates multi-line initialValue", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      initialValue: "line1\nline2\nline3",
+    });
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("line1\nline2\nline3");
+  });
+
+  it("allows editing after initialValue", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      initialValue: "hello",
+    });
+    input.send(" world");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello world");
+  });
+
+  // --- History ---
+
+  it("navigates to previous history on Up at first line", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["first", "second"],
+    });
+    input.send(KEY.UP); // -> "second"
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("second");
+  });
+
+  it("navigates through history entries", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["first", "second"],
+    });
+    input.send(KEY.UP); // -> "second"
+    input.send(KEY.UP); // -> "first"
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("first");
+  });
+
+  it("returns to draft on Down past end of history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["first", "second"],
+    });
+    input.send("draft");
+    input.send(KEY.UP); // -> "second"
+    input.send(KEY.DOWN); // -> "draft"
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("draft");
+  });
+
+  it("does not go past beginning of history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["only"],
+    });
+    input.send(KEY.UP); // -> "only"
+    input.send(KEY.UP); // no-op (already at oldest)
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("only");
+  });
+
+  it("Up on non-first line moves cursor, not history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["old"],
+    });
+    input.send("line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("line2");
+    input.send(KEY.UP); // move to line 1 (col clamped to min(5,5)=5 = end)
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("line1X\nline2");
+  });
+
+  it("Down on non-last line moves cursor, not history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["old"],
+    });
+    input.send("line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("line2");
+    input.send(KEY.UP); // move to line 1
+    input.send(KEY.DOWN); // move to line 2 (col clamped to min(5,5)=5 = end)
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("line1\nline2X");
+  });
+
+  it("Alt+Up/Down always moves cursor, never triggers history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["old"],
+    });
+    input.send("only line");
+    input.send(KEY.ALT_UP); // pure move up (no-op on first line)
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("only lineX");
+  });
+
+  it("navigates multi-line history entries", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["line1\nline2"],
+    });
+    input.send(KEY.UP); // -> "line1\nline2"
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("line1\nline2");
+  });
+
+  // --- Validation ---
+
+  it("rejects submit when validation fails", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      validate: (v) => (v.length < 3 ? "Too short" : undefined),
+    });
+    input.send("ab");
+    input.send(KEY.ENTER); // validation fails, does not submit
+    input.send("c"); // now "abc"
+    input.send(KEY.ENTER); // validation passes
+    expect(await promise).toBe("abc");
+  });
+
+  it("submits when validation returns undefined", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      validate: () => undefined,
+    });
+    input.send("anything");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("anything");
+  });
+
+  it("submits when validation returns null", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      validate: () => null,
+    });
+    input.send("anything");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("anything");
+  });
+
+  // --- Max lines ---
+
+  it("prevents newline insertion when at maxLines", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      maxLines: 2,
+    });
+    input.send("line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("line2");
+    input.send(KEY.SHIFT_ENTER); // blocked
+    input.send("line3");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("line1\nline2line3");
+  });
+
+  // --- Max length ---
+
+  it("prevents character insertion when at maxLength", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      maxLength: 5,
+    });
+    input.send("abcde");
+    input.send("f"); // blocked
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abcde");
+  });
+
+  it("counts newlines in maxLength", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      maxLength: 5,
+    });
+    input.send("ab");
+    input.send(KEY.SHIFT_ENTER); // "ab\n" = 3 chars
+    input.send("cd"); // "ab\ncd" = 5 chars
+    input.send("e"); // blocked
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("ab\ncd");
+  });
+
+  it("allows deletion when at maxLength", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      maxLength: 3,
+    });
+    input.send("abc"); // at limit
+    input.send(KEY.BACKSPACE); // "ab"
+    input.send("d"); // "abd" (back at limit)
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abd");
+  });
+
+  // --- Ctrl+L ---
+
+  it("Ctrl+L preserves input content", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send(KEY.CTRL_L);
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello");
+  });
+
+  // --- submitOnEnter option ---
+
+  it("submitOnEnter=false: Enter inserts newline, modified Enter submits", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      submitOnEnter: false,
+    });
+    input.send("line1");
+    input.send(KEY.ENTER); // inserts newline
+    input.send("line2");
+    input.send(KEY.SHIFT_ENTER); // submits (any modified enter works)
+    expect(await promise).toBe("line1\nline2");
+  });
+
+  it("submitOnEnter=false: Ctrl+J submits", async () => {
+    const CTRL_J = "\n";
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      submitOnEnter: false,
+    });
+    input.send("hello");
+    input.send(CTRL_J); // submits
+    expect(await promise).toBe("hello");
+  });
+
+  it("submitOnEnter=false: Cmd+Enter submits", async () => {
+    const CMD_ENTER = "\x1b[13;9u";
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      submitOnEnter: false,
+    });
+    input.send("line1");
+    input.send(KEY.ENTER); // inserts newline
+    input.send("line2");
+    input.send(CMD_ENTER); // submits
+    expect(await promise).toBe("line1\nline2");
+  });
+
+  it("submitOnEnter=false: Ctrl+Enter (kitty) submits", async () => {
+    const CTRL_ENTER = "\x1b[13;5u";
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      submitOnEnter: false,
+    });
+    input.send("text");
+    input.send(CTRL_ENTER); // submits
+    expect(await promise).toBe("text");
+  });
+
+  it("submitOnEnter=false: Alt+Enter (legacy ESC+CR) submits", async () => {
+    const ALT_ENTER_LEGACY = "\x1b\r";
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      submitOnEnter: false,
+    });
+    input.send("text");
+    input.send(ALT_ENTER_LEGACY); // submits
+    expect(await promise).toBe("text");
+  });
+
+  it("submitOnEnter=true (default): all modified enters insert newline", async () => {
+    const CTRL_J = "\n";
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+    });
+    input.send("a");
+    input.send(KEY.SHIFT_ENTER); // newline
+    input.send("b");
+    input.send(CTRL_J); // newline (Ctrl+J)
+    input.send("c");
+    input.send(KEY.ENTER); // submits
+    expect(await promise).toBe("a\nb\nc");
+  });
+
+  it("submitOnEnter=false: plain Enter does not submit", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      submitOnEnter: false,
+    });
+    input.send("a");
+    input.send(KEY.ENTER); // newline
+    input.send("b");
+    input.send(KEY.ENTER); // newline
+    input.send("c");
+    input.send(KEY.SHIFT_ENTER); // submits
+    expect(await promise).toBe("a\nb\nc");
+  });
+
+  it("submitOnEnter=false: validation runs on modified enter submit", async () => {
+    const CMD_ENTER = "\x1b[13;9u";
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      submitOnEnter: false,
+      validate: (v) => (v.length < 3 ? "Too short" : undefined),
+    });
+    input.send("ab");
+    input.send(CMD_ENTER); // validation fails, does not submit
+    input.send("c"); // now "abc"
+    input.send(CMD_ENTER); // validation passes
+    expect(await promise).toBe("abc");
+  });
+
+  it("submitOnEnter=false with maxLines: Enter respects maxLines", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      submitOnEnter: false,
+      maxLines: 2,
+    });
+    input.send("line1");
+    input.send(KEY.ENTER); // newline (line 2)
+    input.send("line2");
+    input.send(KEY.ENTER); // blocked by maxLines
+    input.send("extra");
+    input.send(KEY.SHIFT_ENTER); // submit
+    expect(await promise).toBe("line1\nline2extra");
+  });
+
+  // --- disabledKeys option ---
+
+  it("disabledKeys disables specific key combos", async () => {
+    const CTRL_J = "\n";
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      disabledKeys: ["ctrl+j"],
+    });
+    input.send("hello");
+    input.send(CTRL_J); // disabled, ignored
+    input.send(KEY.SHIFT_ENTER); // newline still works
+    input.send("world");
+    input.send(KEY.ENTER); // submits
+    expect(await promise).toBe("hello\nworld");
+  });
+
+  it("disabledKeys works with submitOnEnter=false", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      submitOnEnter: false,
+      disabledKeys: ["shift+enter", "alt+enter"],
+    });
+    input.send("text");
+    input.send(KEY.SHIFT_ENTER); // disabled, ignored
+    // Ctrl+J still works as submit
+    input.send("\n");
+    expect(await promise).toBe("text");
   });
 });
 

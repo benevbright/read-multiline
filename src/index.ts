@@ -24,7 +24,48 @@ export interface ReadMultilineOptions {
 
   /** Output stream (default: process.stdout) */
   output?: NodeJS.WritableStream;
+
+  /** Initial value to pre-populate the input */
+  initialValue?: string;
+
+  /** History entries (oldest first). Up/Down at boundaries navigates history. */
+  history?: string[];
+
+  /** Maximum number of lines allowed */
+  maxLines?: number;
+
+  /** Maximum total character count allowed */
+  maxLength?: number;
+
+  /** Validation function. Return an error message string to reject, or undefined/null to accept. */
+  validate?: (value: string) => string | undefined | null;
+
+  /** Debounce interval (ms) for live validation after first submit failure (default: 300) */
+  validateDebounceMs?: number;
+
+  /**
+   * Whether Enter submits the input (default: true).
+   * - true: Enter=submit, modified Enter (Shift/Ctrl/Cmd/Alt+Enter, Ctrl+J)=newline
+   * - false: Enter=newline, modified Enter=submit
+   *
+   * Ctrl+J (0x0A) works as a universal fallback in all terminals.
+   * Shift+Enter, Ctrl+Enter, Cmd+Enter require the kitty keyboard protocol.
+   */
+  submitOnEnter?: boolean;
+
+  /**
+   * Key combinations to disable.
+   * Disabled keys are ignored (neither submit nor newline).
+   */
+  disabledKeys?: ModifiedEnterKey[];
 }
+
+export type ModifiedEnterKey =
+  | "shift+enter"
+  | "ctrl+enter"
+  | "cmd+enter"
+  | "alt+enter"
+  | "ctrl+j";
 
 export interface TTYInput extends NodeJS.ReadableStream {
   isTTY?: boolean;
@@ -34,17 +75,22 @@ export interface TTYInput extends NodeJS.ReadableStream {
 /**
  * Read multi-line input from the terminal.
  *
- * Key bindings:
+ * Key bindings (default, submitOnEnter=true):
  * - Enter: Submit input
- * - Shift+Enter: Insert newline
+ * - Shift+Enter / Ctrl+Enter / Cmd+Enter / Alt+Enter / Ctrl+J: Insert newline
  * - Backspace: Delete character (can merge lines)
+ * - Delete: Forward delete character (can merge lines)
+ * - Ctrl+U: Delete to line start
+ * - Ctrl+K: Delete to line end
  * - Left/Right: Cursor movement (crosses line boundaries)
- * - Up/Down: Move between lines
+ * - Up/Down: Move between lines (history at boundaries)
  * - Alt+Left/Right: Word jump
  * - Cmd+Left/Right (Home/End): Jump to line start/end
  * - Cmd+Up/Down: Jump to start/end of entire input
  * - Ctrl+C: Cancel (rejects with CancelError)
  * - Ctrl+D: Submit if input exists, EOF if empty (rejects with EOFError)
+ * - Ctrl+L: Clear screen and redraw
+ * - Ctrl+W: Delete previous word
  *
  * Shift+Enter and Cmd+Arrow detection uses the kitty keyboard protocol.
  * Supported terminals: kitty, iTerm2, WezTerm, Ghostty, foot, etc.
@@ -67,7 +113,7 @@ export function readMultiline(
     return readFromPipe(input);
   }
 
-  return readFromTTY(input, output, prompt, contPrompt);
+  return readFromTTY(input, output, prompt, contPrompt, options);
 }
 
 function readFromPipe(input: NodeJS.ReadableStream): Promise<string> {
@@ -137,13 +183,35 @@ function charBeforeIndex(str: string, index: number): string {
   return str[index - 1];
 }
 
+/** Count total characters across all lines (join with newlines) */
+function contentLength(lines: string[]): number {
+  let len = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (i > 0) len++; // newline separator
+    len += [...lines[i]].length;
+  }
+  return len;
+}
+
 function readFromTTY(
   input: TTYInput,
   output: NodeJS.WritableStream,
   prompt: string,
   linePrompt: string,
+  options: ReadMultilineOptions,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    const {
+      initialValue,
+      history: historyEntries,
+      maxLines,
+      maxLength,
+      validate,
+      validateDebounceMs = 300,
+      submitOnEnter = true,
+      disabledKeys = [],
+    } = options;
+
     const lines: string[] = [""];
     let row = 0;
     let col = 0;
@@ -158,6 +226,151 @@ function readFromTTY(
 
     function w(text: string) {
       output.write(text);
+    }
+
+    // --- Status line (validation / limit errors) ---
+
+    let statusText = "";
+    let statusColor: "red" | "green" | "" = "";
+
+    function drawStatus() {
+      if (!statusText) return;
+      // Move to end of content, then one line below
+      const endRow = lines.length - 1;
+      const dr = endRow - row;
+      if (dr > 0) w(`\x1b[${dr}B`);
+      else if (dr < 0) w(`\x1b[${-dr}A`);
+      w("\r\n");
+      // Color
+      if (statusColor === "red") w("\x1b[31m");
+      else if (statusColor === "green") w("\x1b[32m");
+      w(statusText);
+      if (statusColor) w("\x1b[0m");
+      w("\x1b[K"); // clear rest of line
+      // Move back to cursor position
+      w(`\x1b[${endRow - row + 1 + 1}A`); // go up to original row (we moved to endRow then +1)
+      // Actually, let's recalculate: we are now at endRow+1 (status line), need to go to `row`
+      const linesDown = endRow + 1; // status line row index (0-based from first line)
+      const upCount = linesDown - row;
+      if (upCount > 0) w(`\x1b[${upCount}A`);
+      w(`\x1b[${tCol(row, col)}G`);
+    }
+
+    function clearStatus() {
+      if (!statusText) return;
+      // Move to status line and clear it
+      const endRow = lines.length - 1;
+      const dr = endRow - row;
+      if (dr > 0) w(`\x1b[${dr}B`);
+      else if (dr < 0) w(`\x1b[${-dr}A`);
+      w("\r\n\x1b[K"); // next line, clear it
+      // Move back
+      const upCount = endRow + 1 - row;
+      if (upCount > 0) w(`\x1b[${upCount}A`);
+      w(`\x1b[${tCol(row, col)}G`);
+      statusText = "";
+      statusColor = "";
+    }
+
+    function setStatus(text: string, color: "red" | "green" | "") {
+      clearStatus();
+      statusText = text;
+      statusColor = color;
+      if (text) drawStatus();
+    }
+
+    // --- History ---
+
+    const history = historyEntries ? [...historyEntries] : [];
+    let historyIndex = history.length; // points past end = current draft
+    let draft: string = initialValue ?? ""; // save current input when navigating history
+
+    function loadContent(content: string) {
+      // Clear current content and load new content
+      const newLines = content.split("\n");
+      // Move to (0, 0) visually
+      if (row > 0) w(`\x1b[${row}A`);
+      w("\r");
+      // Clear from prompt start
+      w(`\x1b[${pW(0) + 1}G`);
+      w("\x1b[J");
+      // Set new lines
+      lines.length = 0;
+      lines.push(...newLines);
+      // Draw content
+      w(lines[0]);
+      for (let i = 1; i < lines.length; i++) {
+        w("\n" + linePrompt + lines[i]);
+      }
+      // Place cursor at end
+      row = lines.length - 1;
+      col = lines[row].length;
+      w(`\x1b[${tCol(row, col)}G`);
+    }
+
+    function historyPrev() {
+      if (historyIndex <= 0) return;
+      if (historyIndex === history.length) {
+        draft = lines.join("\n");
+      }
+      historyIndex--;
+      loadContent(history[historyIndex]);
+    }
+
+    function historyNext() {
+      if (historyIndex >= history.length) return;
+      historyIndex++;
+      if (historyIndex === history.length) {
+        loadContent(draft);
+      } else {
+        loadContent(history[historyIndex]);
+      }
+    }
+
+    // --- Validation ---
+
+    let validationActive = false;
+    let validateTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function runValidation(): string | undefined | null {
+      if (!validate) return undefined;
+      return validate(lines.join("\n"));
+    }
+
+    function scheduleValidation() {
+      if (!validationActive || !validate) return;
+      if (validateTimer) clearTimeout(validateTimer);
+      validateTimer = setTimeout(() => {
+        validateTimer = null;
+        const error = runValidation();
+        if (error) {
+          setStatus(error, "red");
+        } else {
+          setStatus("OK", "green");
+        }
+      }, validateDebounceMs);
+    }
+
+    function onContentChanged() {
+      // Check limits and show error
+      if (maxLength != null) {
+        const len = contentLength(lines);
+        if (len >= maxLength) {
+          setStatus(`Maximum ${maxLength} characters`, "red");
+          return;
+        }
+      }
+      if (maxLines != null && lines.length >= maxLines) {
+        // Only show if they just hit the limit
+        // Actually, we don't need to persistently show this - clear any limit error
+      }
+
+      // Schedule validation if active
+      if (validationActive) {
+        scheduleValidation();
+      } else {
+        clearStatus();
+      }
     }
 
     // Move terminal cursor from (row, col) to (newRow, newCol)
@@ -198,25 +411,59 @@ function readFromTTY(
 
       row = targetRow;
       col = targetCol;
+
+      // Redraw status if present
+      if (statusText) drawStatus();
     }
 
     // --- Editing operations ---
 
+    function canInsertChar(charCount: number = 1): boolean {
+      if (maxLength != null) {
+        const len = contentLength(lines);
+        if (len + charCount > maxLength) {
+          setStatus(`Maximum ${maxLength} characters`, "red");
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function canInsertNewline(): boolean {
+      if (maxLines != null && lines.length >= maxLines) {
+        setStatus(`Maximum ${maxLines} lines`, "red");
+        return false;
+      }
+      if (maxLength != null) {
+        // A newline adds one to content length
+        const len = contentLength(lines);
+        if (len + 1 > maxLength) {
+          setStatus(`Maximum ${maxLength} characters`, "red");
+          return false;
+        }
+      }
+      return true;
+    }
+
     function insertChar(ch: string) {
+      if (!canInsertChar([...ch].length)) return;
       lines[row] = lines[row].slice(0, col) + ch + lines[row].slice(col);
       col += ch.length;
       const rest = lines[row].slice(col);
       w(ch + rest);
       const restW = stringWidth(rest);
       if (restW > 0) w(`\x1b[${restW}D`);
+      onContentChanged();
     }
 
     function insertNewline() {
+      if (!canInsertNewline()) return;
       const after = lines[row].slice(col);
       lines[row] = lines[row].slice(0, col);
       lines.splice(row + 1, 0, after);
       // Don't update row/col yet (redrawFrom uses them as current terminal position)
       redrawFrom(row, row + 1, 0);
+      onContentChanged();
     }
 
     // Redraw current line after deleting characters of the given display width at cursor
@@ -233,13 +480,56 @@ function readFromTTY(
         lines[row] =
           lines[row].slice(0, col) + lines[row].slice(col + deleted.length);
         redrawAfterDelete(charWidth(deleted.codePointAt(0)!));
+        onContentChanged();
       } else if (row > 0) {
         const prevLen = lines[row - 1].length;
         lines[row - 1] += lines[row];
         lines.splice(row, 1);
         // Don't update row/col yet (redrawFrom uses them as current terminal position)
         redrawFrom(row - 1, row - 1, prevLen);
+        onContentChanged();
       }
+    }
+
+    function handleDelete() {
+      if (col < lines[row].length) {
+        const deleted = charAtIndex(lines[row], col);
+        lines[row] =
+          lines[row].slice(0, col) + lines[row].slice(col + deleted.length);
+        // Redraw rest of line
+        const rest = lines[row].slice(col);
+        const restW = stringWidth(rest);
+        const deletedW = charWidth(deleted.codePointAt(0)!);
+        w(`${rest}${" ".repeat(deletedW)}`);
+        if (restW + deletedW > 0) w(`\x1b[${restW + deletedW}D`);
+        onContentChanged();
+      } else if (row < lines.length - 1) {
+        // Merge next line into current
+        lines[row] += lines[row + 1];
+        lines.splice(row + 1, 1);
+        redrawFrom(row, row, col);
+        onContentChanged();
+      }
+    }
+
+    function deleteToLineStart() {
+      if (col === 0) return;
+      const deletedWidth = stringWidth(lines[row].slice(0, col));
+      lines[row] = lines[row].slice(col);
+      col = 0;
+      // Move to start, rewrite line, clear remainder
+      w(`\x1b[${pW(row) + 1}G`);
+      w(lines[row]);
+      w(" ".repeat(deletedWidth));
+      w(`\x1b[${pW(row) + 1}G`);
+      onContentChanged();
+    }
+
+    function deleteToLineEnd() {
+      if (col >= lines[row].length) return;
+      lines[row] = lines[row].slice(0, col);
+      w("\x1b[K"); // clear to end of line
+      onContentChanged();
     }
 
     function deleteWordBack() {
@@ -262,6 +552,25 @@ function readFromTTY(
       lines[row] = line.slice(0, c) + line.slice(col);
       col = c;
       redrawAfterDelete(deletedWidth);
+      onContentChanged();
+    }
+
+    // --- Clear screen ---
+
+    function clearScreen() {
+      // Clear entire screen, move cursor to top-left
+      w("\x1b[2J\x1b[H");
+      // Redraw prompt and content
+      w(prompt + lines[0]);
+      for (let i = 1; i < lines.length; i++) {
+        w("\n" + linePrompt + lines[i]);
+      }
+      // Place cursor
+      const endRow = lines.length - 1;
+      if (endRow > row) w(`\x1b[${endRow - row}A`);
+      w(`\x1b[${tCol(row, col)}G`);
+      // Redraw status if present
+      if (statusText) drawStatus();
     }
 
     // --- Cursor movement ---
@@ -297,6 +606,23 @@ function readFromTTY(
     function moveDown() {
       if (row < lines.length - 1) {
         moveTo(row + 1, Math.min(col, lines[row + 1].length));
+      }
+    }
+
+    // Up/Down with history support at boundaries
+    function moveUpOrHistory() {
+      if (row > 0) {
+        moveUp();
+      } else if (history.length > 0) {
+        historyPrev();
+      }
+    }
+
+    function moveDownOrHistory() {
+      if (row < lines.length - 1) {
+        moveDown();
+      } else if (historyIndex < history.length) {
+        historyNext();
       }
     }
 
@@ -384,11 +710,35 @@ function readFromTTY(
 
     // --- Key map ---
 
-    const keyMap: Record<string, () => void> = {
-      // Submit / Cancel
-      "\r": submit,
-      "\x1b[13u": submit, // kitty Enter
-      "\x1b[13;2u": insertNewline, // Shift+Enter
+    const keyMap: Record<string, () => void> = {};
+    const disabled = new Set(disabledKeys);
+
+    // Enter key: submit or newline based on submitOnEnter
+    const enterAction = submitOnEnter ? submit : insertNewline;
+    const modifiedAction = submitOnEnter ? insertNewline : submit;
+
+    keyMap["\r"] = enterAction;
+    keyMap["\x1b[13u"] = enterAction; // kitty Enter
+
+    // Modified Enter keys: opposite of Enter (unless disabled)
+    const modifiedEnterKeys: Record<ModifiedEnterKey, string[]> = {
+      "shift+enter": ["\x1b[13;2u"],
+      "ctrl+enter": ["\x1b[13;5u"],
+      "cmd+enter": ["\x1b[13;9u"],
+      "alt+enter": ["\x1b\r", "\x1b[13;3u"],
+      "ctrl+j": ["\n"],
+    };
+
+    for (const [name, seqs] of Object.entries(modifiedEnterKeys)) {
+      if (!disabled.has(name as ModifiedEnterKey)) {
+        for (const seq of seqs) {
+          keyMap[seq] = modifiedAction;
+        }
+      }
+    }
+
+    // Cancel / EOF
+    Object.assign(keyMap, {
       "\x03": cancel, // Ctrl+C
       "\x1b[99;5u": cancel, // kitty Ctrl+C
       "\x04": handleEOF, // Ctrl+D
@@ -399,10 +749,19 @@ function readFromTTY(
       "\b": handleBackspace,
       "\x17": deleteWordBack, // Ctrl+W
       "\x1b[119;5u": deleteWordBack, // kitty Ctrl+W
+      "\x1b[3~": handleDelete, // Delete key
+      "\x15": deleteToLineStart, // Ctrl+U
+      "\x1b[117;5u": deleteToLineStart, // kitty Ctrl+U
+      "\x0b": deleteToLineEnd, // Ctrl+K
+      "\x1b[107;5u": deleteToLineEnd, // kitty Ctrl+K
 
-      // Arrow keys
-      "\x1b[A": moveUp,
-      "\x1b[B": moveDown,
+      // Clear screen
+      "\x0c": clearScreen, // Ctrl+L
+      "\x1b[108;5u": clearScreen, // kitty Ctrl+L
+
+      // Arrow keys (with history support)
+      "\x1b[A": moveUpOrHistory,
+      "\x1b[B": moveDownOrHistory,
       "\x1b[C": moveRight,
       "\x1b[D": moveLeft,
 
@@ -437,21 +796,55 @@ function readFromTTY(
       // Home/End
       "\x1b[H": lineStart,
       "\x1b[F": lineEnd,
-    };
+    });
 
     // --- Initialization ---
 
     if (prompt) w(prompt);
+
+    // Load initial value
+    if (initialValue) {
+      const initLines = initialValue.split("\n");
+      lines.length = 0;
+      lines.push(...initLines);
+      w(lines[0]);
+      for (let i = 1; i < lines.length; i++) {
+        w("\n" + linePrompt + lines[i]);
+      }
+      row = lines.length - 1;
+      col = lines[row].length;
+    }
+
     input.setRawMode?.(true);
     input.resume();
     w("\x1b[>1u"); // Enable kitty keyboard protocol
     w("\x1b[?2004h"); // Enable bracketed paste mode
+
+    // --- Resize handling ---
+
+    let resizeHandler: (() => void) | null = null;
+    const ttyOutput = output as NodeJS.WriteStream;
+    if (typeof ttyOutput.on === "function" && "columns" in ttyOutput) {
+      resizeHandler = () => {
+        // Full redraw on resize
+        clearScreen();
+      };
+      ttyOutput.on("resize", resizeHandler);
+    }
 
     function cleanup() {
       if (escTimer) {
         clearTimeout(escTimer);
         escTimer = null;
       }
+      if (validateTimer) {
+        clearTimeout(validateTimer);
+        validateTimer = null;
+      }
+      if (resizeHandler && typeof ttyOutput.removeListener === "function") {
+        ttyOutput.removeListener("resize", resizeHandler);
+      }
+      clearStatus();
       w("\x1b[?2004l"); // Disable bracketed paste mode
       w("\x1b[<u"); // Disable kitty protocol
       input.setRawMode?.(false);
@@ -460,6 +853,15 @@ function readFromTTY(
     }
 
     function submit() {
+      // Run validation if configured
+      if (validate) {
+        const error = runValidation();
+        if (error) {
+          validationActive = true;
+          setStatus(error, "red");
+          return; // Don't submit
+        }
+      }
       cleanup();
       w("\n");
       resolve(lines.join("\n"));

@@ -50,8 +50,12 @@ const KEY = {
   ENTER: "\r",
   SHIFT_ENTER: "\x1b[13;2u",
   BACKSPACE: "\x7f",
+  DELETE: "\x1b[3~",
   CTRL_C: "\x03",
   CTRL_W: "\x17",
+  CTRL_U: "\x15",
+  CTRL_K: "\x0b",
+  CTRL_L: "\x0c",
   UP: "\x1b[A",
   DOWN: "\x1b[B",
   RIGHT: "\x1b[C",
@@ -549,6 +553,183 @@ describe("Screen rendering (virtual terminal)", () => {
 
     expect(screenLine(vt.term, 0)).toBe("abc");
     expect(cursorPos(vt.term)).toEqual({ x: 3, y: 0 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  // --- Delete key rendering ---
+
+  it("Delete key removes character ahead and redraws", async () => {
+    const promise = readMultiline({
+      input,
+      output: vt.stream,
+      prompt: "> ",
+    });
+    input.send("abcd");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT); // ab|cd
+    input.send(KEY.DELETE); // ab|d
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("> abd");
+    expect(cursorPos(vt.term)).toEqual({ x: 4, y: 0 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  it("Delete at line end merges lines and redraws", async () => {
+    const promise = readMultiline({
+      input,
+      output: vt.stream,
+      prompt: "> ",
+      linePrompt: "  ",
+    });
+    input.send("ab");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("cd");
+    input.send(KEY.UP);
+    input.send(KEY.CMD_RIGHT); // end of line 1
+    input.send(KEY.DELETE); // merge
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("> abcd");
+    expect(screenLine(vt.term, 1)).toBe("");
+    expect(cursorPos(vt.term)).toEqual({ x: 4, y: 0 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  // --- Ctrl+U / Ctrl+K rendering ---
+
+  it("Ctrl+U clears from cursor to line start", async () => {
+    const promise = readMultiline({
+      input,
+      output: vt.stream,
+      prompt: "> ",
+    });
+    input.send("hello world");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT); // hello |world
+    input.send(KEY.CTRL_U);
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("> world");
+    expect(cursorPos(vt.term)).toEqual({ x: 2, y: 0 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  it("Ctrl+K clears from cursor to line end", async () => {
+    const promise = readMultiline({
+      input,
+      output: vt.stream,
+      prompt: "> ",
+    });
+    input.send("hello world");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT); // hello |world
+    input.send(KEY.CTRL_K);
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("> hello");
+    expect(cursorPos(vt.term)).toEqual({ x: 8, y: 0 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  // --- initialValue rendering ---
+
+  it("initialValue renders correctly", async () => {
+    const promise = readMultiline({
+      input,
+      output: vt.stream,
+      prompt: "> ",
+      initialValue: "hello",
+    });
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("> hello");
+    expect(cursorPos(vt.term)).toEqual({ x: 7, y: 0 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  it("multi-line initialValue renders all lines", async () => {
+    const promise = readMultiline({
+      input,
+      output: vt.stream,
+      prompt: "> ",
+      linePrompt: "  ",
+      initialValue: "line1\nline2",
+    });
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("> line1");
+    expect(screenLine(vt.term, 1)).toBe("  line2");
+    expect(cursorPos(vt.term)).toEqual({ x: 7, y: 1 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  // --- History rendering ---
+
+  it("history navigation renders correctly", async () => {
+    const promise = readMultiline({
+      input,
+      output: vt.stream,
+      prompt: "> ",
+      history: ["old entry"],
+    });
+    input.send("current");
+    input.send(KEY.UP); // -> "old entry"
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("> old entry");
+    expect(cursorPos(vt.term)).toEqual({ x: 11, y: 0 });
+
+    input.send(KEY.DOWN); // -> "current"
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("> current");
+    expect(cursorPos(vt.term)).toEqual({ x: 9, y: 0 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  // --- Ctrl+L rendering ---
+
+  it("Ctrl+L clears screen and redraws content", async () => {
+    const promise = readMultiline({
+      input,
+      output: vt.stream,
+      prompt: "> ",
+      linePrompt: "  ",
+    });
+    input.send("line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("line2");
+    input.send(KEY.UP); // move to line 1
+    input.send(KEY.CTRL_L);
+    await flush(vt.term);
+
+    // After clear, content should be at top of screen
+    expect(screenLine(vt.term, 0)).toBe("> line1");
+    expect(screenLine(vt.term, 1)).toBe("  line2");
+    expect(cursorPos(vt.term).y).toBe(0);
 
     input.send(KEY.ENTER);
     await promise;
