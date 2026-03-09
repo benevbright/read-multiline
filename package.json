@@ -2,37 +2,55 @@
   "name": "read-multiline",
   "version": "0.1.0",
   "description": "Simple multi-line input reader for Node.js terminals",
+  "keywords": [
+    "cli",
+    "input",
+    "multiline",
+    "readline",
+    "stdin",
+    "terminal"
+  ],
+  "license": "MIT",
+  "author": "",
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build"
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint -c oxlint.json src",
+    "lint:fix": "oxlint -c oxlint.json --fix src",
+    "knip": "knip",
+    "format": "oxfmt src",
+    "format:check": "oxfmt --check src",
+    "organize-imports": "organize-imports-cli tsconfig.json",
+    "fix:oxlint": "oxlint -c oxlint.json --fix",
+    "fix:oxfmt": "oxfmt",
+    "prepare": "lefthook install",
+    "prepublishOnly": "npm run build",
+    "changeset": "changeset",
+    "release": "npm run build && changeset publish"
   },
-  "keywords": [
-    "readline",
-    "multiline",
-    "input",
-    "terminal",
-    "cli",
-    "stdin"
-  ],
-  "author": "",
-  "license": "MIT",
   "devDependencies": {
+    "@changesets/cli": "^2.29.8",
     "@types/node": "^25.3.5",
     "@xterm/headless": "^6.0.0",
+    "knip": "^5.85.0",
+    "lefthook": "^2.1.1",
+    "organize-imports-cli": "^0.10.0",
+    "oxfmt": "^0.35.0",
+    "oxlint": "^1.50.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
   }

@@ -1,12 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
-import {
-  readMultiline,
-  CancelError,
-  EOFError,
-  type TTYInput,
-} from "./index.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CancelError, EOFError, readMultiline, type TTYInput } from "./index.js";
 
 // Dummy output stream that records writes
 function createNullOutput() {
@@ -21,10 +16,8 @@ function createNullOutput() {
 }
 
 // Helper to simulate TTY input
-function createTTYInput(): TTYInput &
-  EventEmitter & { send: (data: string) => void } {
-  const emitter = new EventEmitter() as TTYInput &
-    EventEmitter & { send: (data: string) => void };
+function createTTYInput(): TTYInput & EventEmitter & { send: (data: string) => void } {
+  const emitter = new EventEmitter() as TTYInput & EventEmitter & { send: (data: string) => void };
   emitter.isTTY = true;
   emitter.setRawMode = vi.fn();
   emitter.resume = vi.fn();
@@ -1543,9 +1536,7 @@ describe("readMultiline (pipe mode)", () => {
     const input = Readable.from(["line1\nline2\nline3\n"]) as TTYInput;
     input.isTTY = false;
     const { stream } = createNullOutput();
-    expect(await readMultiline({ input, output: stream })).toBe(
-      "line1\nline2\nline3",
-    );
+    expect(await readMultiline({ input, output: stream })).toBe("line1\nline2\nline3");
   });
 
   it("returns input without trailing newline from pipe", async () => {

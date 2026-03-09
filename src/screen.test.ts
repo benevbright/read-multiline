@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { EventEmitter } from "node:events";
 import { Terminal } from "@xterm/headless";
-import { readMultiline, CancelError, type TTYInput } from "./index.js";
+import { EventEmitter } from "node:events";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readMultiline, type TTYInput } from "./index.js";
 
 // Virtual terminal that feeds ANSI output into @xterm/headless
 function createVirtualTerminal(cols = 80, rows = 24) {
@@ -15,10 +15,8 @@ function createVirtualTerminal(cols = 80, rows = 24) {
   return { term, stream };
 }
 
-function createTTYInput(): TTYInput &
-  EventEmitter & { send: (data: string) => void } {
-  const emitter = new EventEmitter() as TTYInput &
-    EventEmitter & { send: (data: string) => void };
+function createTTYInput(): TTYInput & EventEmitter & { send: (data: string) => void } {
+  const emitter = new EventEmitter() as TTYInput & EventEmitter & { send: (data: string) => void };
   emitter.isTTY = true;
   emitter.setRawMode = vi.fn();
   emitter.resume = vi.fn();

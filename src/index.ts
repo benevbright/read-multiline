@@ -60,12 +60,7 @@ export interface ReadMultilineOptions {
   disabledKeys?: ModifiedEnterKey[];
 }
 
-export type ModifiedEnterKey =
-  | "shift+enter"
-  | "ctrl+enter"
-  | "cmd+enter"
-  | "alt+enter"
-  | "ctrl+j";
+export type ModifiedEnterKey = "shift+enter" | "ctrl+enter" | "cmd+enter" | "alt+enter" | "ctrl+j";
 
 export interface TTYInput extends NodeJS.ReadableStream {
   isTTY?: boolean;
@@ -99,9 +94,7 @@ export interface TTYInput extends NodeJS.ReadableStream {
  *
  * For non-TTY input (pipes), reads all lines until EOF.
  */
-export function readMultiline(
-  options: ReadMultilineOptions = {},
-): Promise<string> {
+export function readMultiline(options: ReadMultilineOptions = {}): Promise<string> {
   const {
     prompt = "",
     linePrompt,
@@ -223,8 +216,7 @@ function readFromTTY(
     const pW = (r: number) => (r === 0 ? promptWidth : linePromptWidth);
 
     // 1-based terminal column from line start to code unit index c, accounting for display width
-    const tCol = (r: number, c: number) =>
-      pW(r) + stringWidth(lines[r].slice(0, c)) + 1;
+    const tCol = (r: number, c: number) => pW(r) + stringWidth(lines[r].slice(0, c)) + 1;
 
     function w(text: string) {
       output.write(text);
@@ -386,11 +378,7 @@ function readFromTTY(
     }
 
     // Redraw from fromRow onwards and place terminal cursor at (targetRow, targetCol)
-    function redrawFrom(
-      fromRow: number,
-      targetRow: number,
-      targetCol: number,
-    ) {
+    function redrawFrom(fromRow: number, targetRow: number, targetCol: number) {
       // Move cursor to content start of fromRow
       const dr = row - fromRow;
       if (dr > 0) w(`\x1b[${dr}A`);
@@ -551,8 +539,7 @@ function readFromTTY(
         saveUndo();
         const deleted = charBeforeIndex(lines[row], col);
         col -= deleted.length;
-        lines[row] =
-          lines[row].slice(0, col) + lines[row].slice(col + deleted.length);
+        lines[row] = lines[row].slice(0, col) + lines[row].slice(col + deleted.length);
         redrawAfterDelete(charWidth(deleted.codePointAt(0)!));
         onContentChanged();
       } else if (row > 0) {
@@ -570,8 +557,7 @@ function readFromTTY(
       if (col < lines[row].length) {
         saveUndo();
         const deleted = charAtIndex(lines[row], col);
-        lines[row] =
-          lines[row].slice(0, col) + lines[row].slice(col + deleted.length);
+        lines[row] = lines[row].slice(0, col) + lines[row].slice(col + deleted.length);
         // Redraw rest of line
         const rest = lines[row].slice(col);
         const restW = stringWidth(rest);
@@ -1081,5 +1067,3 @@ function readFromTTY(
     input.on("data", onData);
   });
 }
-
-export default readMultiline;
