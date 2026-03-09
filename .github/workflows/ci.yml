@@ -33,5 +33,9 @@ jobs:
         run: npm run format:check
       - name: Knip
         run: npm run knip
+      - name: Build
+        run: npm run build
+      - name: Publint
+        run: npx publint
       - name: Test
         run: npm test
