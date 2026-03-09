@@ -1,5 +1,5 @@
 {
-  "name": "read-multiline",
+  "name": "@toiroakr/read-multiline",
   "version": "0.1.0",
   "description": "Simple multi-line input reader for Node.js terminals",
   "keywords": [
