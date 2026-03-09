@@ -90,6 +90,8 @@ export interface TTYInput extends NodeJS.ReadableStream {
  * - Ctrl+C: Cancel (rejects with CancelError)
  * - Ctrl+D: Submit if input exists, EOF if empty (rejects with EOFError)
  * - Ctrl+L: Clear screen and redraw
+ * - Ctrl+Z: Undo
+ * - Ctrl+Shift+Z / Ctrl+Y: Redo
  * - Ctrl+W: Delete previous word
  *
  * Shift+Enter and Cmd+Arrow detection uses the kitty keyboard protocol.
@@ -416,6 +418,75 @@ function readFromTTY(
       if (statusText) drawStatus();
     }
 
+    // --- Undo / Redo ---
+
+    interface Snapshot {
+      lines: string[];
+      row: number;
+      col: number;
+    }
+
+    const undoStack: Snapshot[] = [];
+    const redoStack: Snapshot[] = [];
+    const MAX_UNDO = 200;
+    let lastEditType: "insert" | "other" | "" = "";
+
+    function takeSnapshot(): Snapshot {
+      return { lines: [...lines], row, col };
+    }
+
+    function saveUndo(editType: "insert" | "other" = "other") {
+      // Group consecutive character insertions into one undo step
+      if (editType === "insert" && lastEditType === "insert" && undoStack.length > 0) {
+        lastEditType = editType;
+        return;
+      }
+      lastEditType = editType;
+      undoStack.push(takeSnapshot());
+      if (undoStack.length > MAX_UNDO) undoStack.shift();
+      redoStack.length = 0; // clear redo on new edit
+    }
+
+    function restoreSnapshot(snap: Snapshot) {
+      lines.length = 0;
+      lines.push(...snap.lines);
+      // Full redraw from row 0
+      // Move to row 0 first
+      if (row > 0) w(`\x1b[${row}A`);
+      w("\r");
+      w(`\x1b[${pW(0) + 1}G`);
+      w("\x1b[J");
+      w(lines[0]);
+      for (let i = 1; i < lines.length; i++) {
+        w("\n" + linePrompt + lines[i]);
+      }
+      // Move cursor to snapshot position
+      const endRow = lines.length - 1;
+      if (endRow > snap.row) w(`\x1b[${endRow - snap.row}A`);
+      w(`\x1b[${tCol(snap.row, snap.col)}G`);
+      row = snap.row;
+      col = snap.col;
+      if (statusText) drawStatus();
+    }
+
+    function undo() {
+      if (undoStack.length === 0) return;
+      redoStack.push(takeSnapshot());
+      const snap = undoStack.pop()!;
+      restoreSnapshot(snap);
+      lastEditType = "";
+      onContentChanged();
+    }
+
+    function redo() {
+      if (redoStack.length === 0) return;
+      undoStack.push(takeSnapshot());
+      const snap = redoStack.pop()!;
+      restoreSnapshot(snap);
+      lastEditType = "";
+      onContentChanged();
+    }
+
     // --- Editing operations ---
 
     function canInsertChar(charCount: number = 1): boolean {
@@ -447,6 +518,7 @@ function readFromTTY(
 
     function insertChar(ch: string) {
       if (!canInsertChar([...ch].length)) return;
+      if (!isPasting) saveUndo("insert");
       lines[row] = lines[row].slice(0, col) + ch + lines[row].slice(col);
       col += ch.length;
       const rest = lines[row].slice(col);
@@ -458,6 +530,7 @@ function readFromTTY(
 
     function insertNewline() {
       if (!canInsertNewline()) return;
+      if (!isPasting) saveUndo();
       const after = lines[row].slice(col);
       lines[row] = lines[row].slice(0, col);
       lines.splice(row + 1, 0, after);
@@ -475,6 +548,7 @@ function readFromTTY(
 
     function handleBackspace() {
       if (col > 0) {
+        saveUndo();
         const deleted = charBeforeIndex(lines[row], col);
         col -= deleted.length;
         lines[row] =
@@ -482,6 +556,7 @@ function readFromTTY(
         redrawAfterDelete(charWidth(deleted.codePointAt(0)!));
         onContentChanged();
       } else if (row > 0) {
+        saveUndo();
         const prevLen = lines[row - 1].length;
         lines[row - 1] += lines[row];
         lines.splice(row, 1);
@@ -493,6 +568,7 @@ function readFromTTY(
 
     function handleDelete() {
       if (col < lines[row].length) {
+        saveUndo();
         const deleted = charAtIndex(lines[row], col);
         lines[row] =
           lines[row].slice(0, col) + lines[row].slice(col + deleted.length);
@@ -504,6 +580,7 @@ function readFromTTY(
         if (restW + deletedW > 0) w(`\x1b[${restW + deletedW}D`);
         onContentChanged();
       } else if (row < lines.length - 1) {
+        saveUndo();
         // Merge next line into current
         lines[row] += lines[row + 1];
         lines.splice(row + 1, 1);
@@ -514,6 +591,7 @@ function readFromTTY(
 
     function deleteToLineStart() {
       if (col === 0) return;
+      saveUndo();
       const deletedWidth = stringWidth(lines[row].slice(0, col));
       lines[row] = lines[row].slice(col);
       col = 0;
@@ -527,6 +605,7 @@ function readFromTTY(
 
     function deleteToLineEnd() {
       if (col >= lines[row].length) return;
+      saveUndo();
       lines[row] = lines[row].slice(0, col);
       w("\x1b[K"); // clear to end of line
       onContentChanged();
@@ -538,6 +617,7 @@ function readFromTTY(
         handleBackspace();
         return;
       }
+      saveUndo();
       const line = lines[row];
       let c = col;
       // Skip non-word characters before cursor
@@ -755,6 +835,16 @@ function readFromTTY(
       "\x0b": deleteToLineEnd, // Ctrl+K
       "\x1b[107;5u": deleteToLineEnd, // kitty Ctrl+K
 
+      // Undo / Redo
+      "\x1a": undo, // Ctrl+Z
+      "\x1b[122;5u": undo, // kitty Ctrl+Z
+      "\x1b[122;9u": undo, // kitty Cmd+Z
+      "\x1b[122;6u": redo, // kitty Ctrl+Shift+Z
+      "\x1b[122;10u": redo, // kitty Cmd+Shift+Z
+      "\x19": redo, // Ctrl+Y
+      "\x1b[121;5u": redo, // kitty Ctrl+Y
+      "\x1b[121;9u": redo, // kitty Cmd+Y
+
       // Clear screen
       "\x0c": clearScreen, // Ctrl+L
       "\x1b[108;5u": clearScreen, // kitty Ctrl+L
@@ -924,6 +1014,7 @@ function readFromTTY(
       const startIdx = seq.indexOf(PASTE_START);
       if (startIdx !== -1) {
         if (startIdx > 0) processInput(seq.slice(0, startIdx));
+        saveUndo();
         isPasting = true;
         const after = seq.slice(startIdx + PASTE_START.length);
         if (after) processInput(after);

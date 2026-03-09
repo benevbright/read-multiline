@@ -11,6 +11,8 @@ console.log("  Cmd+Up/Down:        Buffer start/end");
 console.log("  Delete:             Forward delete");
 console.log("  Ctrl+U:             Delete to line start");
 console.log("  Ctrl+K:             Delete to line end");
+console.log("  Ctrl+Z:             Undo");
+console.log("  Ctrl+Shift+Z/Ctrl+Y: Redo");
 console.log("  Ctrl+L:             Clear screen");
 console.log("  Ctrl+C:             Cancel");
 console.log("  Ctrl+D:             Submit / EOF if empty");

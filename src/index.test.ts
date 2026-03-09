@@ -51,6 +51,9 @@ const KEY = {
   CTRL_U: "\x15",
   CTRL_K: "\x0b",
   CTRL_L: "\x0c",
+  CTRL_Z: "\x1a",
+  CTRL_Y: "\x19",
+  CTRL_SHIFT_Z: "\x1b[122;6u",
   UP: "\x1b[A",
   DOWN: "\x1b[B",
   RIGHT: "\x1b[C",
@@ -1223,6 +1226,158 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_L);
     input.send(KEY.ENTER);
     expect(await promise).toBe("hello");
+  });
+
+  // --- Undo / Redo ---
+
+  it("undoes character insertion with Ctrl+Z", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.CTRL_Z); // undo grouped "abc" insert
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("");
+  });
+
+  it("undoes and redoes with Ctrl+Z / Ctrl+Y", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send(KEY.CTRL_Z); // undo
+    input.send(KEY.CTRL_Y); // redo
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello");
+  });
+
+  it("undoes newline insertion", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("ab");
+    input.send(KEY.SHIFT_ENTER);
+    input.send(KEY.CTRL_Z); // undo newline
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("ab");
+  });
+
+  it("undoes backspace", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.BACKSPACE); // delete c
+    input.send(KEY.CTRL_Z); // undo backspace
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc");
+  });
+
+  it("undoes delete key", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.LEFT); // ab|c
+    input.send(KEY.DELETE); // ab|
+    input.send(KEY.CTRL_Z); // undo delete
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc");
+  });
+
+  it("undoes Ctrl+W word deletion", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello world");
+    input.send(KEY.CTRL_W); // delete "world"
+    input.send(KEY.CTRL_Z); // undo
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello world");
+  });
+
+  it("undoes Ctrl+U delete to line start", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send(KEY.CTRL_U); // delete all
+    input.send(KEY.CTRL_Z); // undo
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello");
+  });
+
+  it("undoes Ctrl+K delete to line end", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send(KEY.CMD_LEFT); // |hello
+    input.send(KEY.CTRL_K); // delete all
+    input.send(KEY.CTRL_Z); // undo
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello");
+  });
+
+  it("multiple undos step through history", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("aaa");
+    input.send(KEY.SHIFT_ENTER); // newline (separate undo step)
+    input.send("bbb");
+    input.send(KEY.CTRL_Z); // undo "bbb"
+    input.send(KEY.CTRL_Z); // undo newline
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("aaa");
+  });
+
+  it("redo is cleared on new edit after undo", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.CTRL_Z); // undo -> ""
+    input.send("xyz"); // new edit, clears redo
+    input.send(KEY.CTRL_Y); // redo does nothing
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("xyz");
+  });
+
+  it("Ctrl+Shift+Z works as redo (kitty)", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send(KEY.CTRL_Z); // undo
+    input.send(KEY.CTRL_SHIFT_Z); // redo
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("hello");
+  });
+
+  it("undo does nothing when stack is empty", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send(KEY.CTRL_Z); // nothing to undo
+    input.send("abc");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc");
+  });
+
+  it("redo does nothing when stack is empty", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.CTRL_Y); // nothing to redo
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("abc");
+  });
+
+  it("undoes paste as a single unit", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("before");
+    input.send("\x1b[200~line1\nline2\nline3\x1b[201~");
+    input.send(KEY.CTRL_Z); // undo entire paste
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("before");
+  });
+
+  it("groups consecutive character inserts into one undo step", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("a");
+    input.send("b");
+    input.send("c"); // all grouped as one insert
+    input.send(KEY.CTRL_Z); // undo all three at once
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("");
+  });
+
+  it("newline breaks insert grouping for undo", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.SHIFT_ENTER); // breaks group
+    input.send("def");
+    input.send(KEY.CTRL_Z); // undo "def"
+    input.send(KEY.CTRL_Z); // undo newline
+    input.send(KEY.CTRL_Z); // undo "abc"
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("");
   });
 
   // --- submitOnEnter option ---

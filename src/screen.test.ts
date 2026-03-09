@@ -56,6 +56,8 @@ const KEY = {
   CTRL_U: "\x15",
   CTRL_K: "\x0b",
   CTRL_L: "\x0c",
+  CTRL_Z: "\x1a",
+  CTRL_Y: "\x19",
   UP: "\x1b[A",
   DOWN: "\x1b[B",
   RIGHT: "\x1b[C",
@@ -705,6 +707,56 @@ describe("Screen rendering (virtual terminal)", () => {
 
     expect(screenLine(vt.term, 0)).toBe("> current");
     expect(cursorPos(vt.term)).toEqual({ x: 9, y: 0 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  // --- Undo / Redo rendering ---
+
+  it("undo restores screen correctly", async () => {
+    const promise = readMultiline({
+      input,
+      output: vt.stream,
+      prompt: "> ",
+      linePrompt: "  ",
+    });
+    input.send("abc");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("def");
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("> abc");
+    expect(screenLine(vt.term, 1)).toBe("  def");
+
+    input.send(KEY.CTRL_Z); // undo "def"
+    input.send(KEY.CTRL_Z); // undo newline
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("> abc");
+    expect(screenLine(vt.term, 1)).toBe(""); // cleared
+    expect(cursorPos(vt.term)).toEqual({ x: 5, y: 0 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  it("redo restores screen correctly", async () => {
+    const promise = readMultiline({
+      input,
+      output: vt.stream,
+      prompt: "> ",
+    });
+    input.send("hello");
+    input.send(KEY.CTRL_Z); // undo
+    await flush(vt.term);
+    expect(screenLine(vt.term, 0)).toBe(">");
+    expect(cursorPos(vt.term)).toEqual({ x: 2, y: 0 });
+
+    input.send(KEY.CTRL_Y); // redo
+    await flush(vt.term);
+    expect(screenLine(vt.term, 0)).toBe("> hello");
+    expect(cursorPos(vt.term)).toEqual({ x: 7, y: 0 });
 
     input.send(KEY.ENTER);
     await promise;

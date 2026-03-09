@@ -9,6 +9,7 @@ Simple multi-line input reader for Node.js terminals. Solves the limitation of N
 - **Alt+Arrow** for word jumping, **Cmd+Arrow** for line/buffer jumping
 - **Delete**, **Ctrl+U**, **Ctrl+K** for forward delete and line editing
 - **Ctrl+W** to delete previous word
+- **Ctrl+Z** / **Ctrl+Y** for undo/redo
 - **Ctrl+L** to clear screen and redraw
 - Full-width (CJK) character support with correct cursor positioning
 - Bracketed paste mode for multi-line paste
@@ -74,56 +75,60 @@ try {
 
 ### Key Bindings
 
-**`submitOnEnter: true` (default):**
+The following table shows all key bindings and their availability across terminal types.
 
-| Key | Action |
-|---|---|
-| Enter | Submit |
-| Shift+Enter | Newline (kitty protocol) |
-| Ctrl+Enter | Newline (kitty protocol) |
-| Cmd+Enter | Newline (kitty protocol, macOS) |
-| Alt+Enter | Newline |
-| Ctrl+J | Newline (universal fallback) |
+**Legend:** "All" = works in all terminals, "Kitty" = requires [kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)
 
-**`submitOnEnter: false`:**
+#### Submit / Newline
 
-| Key | Action |
-|---|---|
-| Enter | Newline |
-| Shift+Enter | Submit (kitty protocol) |
-| Ctrl+Enter | Submit (kitty protocol) |
-| Cmd+Enter | Submit (kitty protocol, macOS) |
-| Alt+Enter | Submit |
-| Ctrl+J | Submit (universal fallback) |
+`submitOnEnter` (default `true`) swaps the action column — Enter gets one role, all modified Enter keys get the other.
 
-**Other key bindings (always active):**
+| Key | Action (`submitOnEnter: true`) | Action (`false`) | Terminal |
+|---|---|---|---|
+| Enter | Submit | Newline | All |
+| Shift+Enter | Newline | Submit | Kitty |
+| Ctrl+Enter | Newline | Submit | Kitty |
+| Cmd+Enter | Newline | Submit | Kitty (macOS) |
+| Alt+Enter | Newline | Submit | All \* |
+| Ctrl+J | Newline | Submit | All |
 
-| Key | Action |
-|---|---|
-| Backspace | Delete character (merges lines at boundary) |
-| Delete | Forward delete character (merges lines at boundary) |
-| Ctrl+U | Delete to line start |
-| Ctrl+K | Delete to line end |
-| Ctrl+W | Delete previous word |
-| Left/Right | Move cursor (crosses line boundaries) |
-| Up/Down | Move between lines (history at boundaries) |
-| Alt+Left/Right | Word jump |
-| Cmd+Left/Right | Line start/end |
-| Cmd+Up/Down | Buffer start/end |
-| Home/End | Line start/end |
-| Ctrl+L | Clear screen and redraw |
-| Ctrl+C | Cancel (`CancelError`) |
-| Ctrl+D | Submit if input exists, EOF if empty (`EOFError`) |
+\* Alt+Enter requires "Use Option as Meta key" on some macOS terminals.
 
-### Terminal Compatibility
+#### Editing
 
-| Key | Kitty protocol | Legacy terminal |
+| Key | Action | Terminal |
 |---|---|---|
-| Shift+Enter | Yes | No (same as Enter) |
-| Ctrl+Enter | Yes | No (same as Ctrl+J) |
-| Cmd+Enter | Yes (macOS) | No |
-| Alt+Enter | Yes | Mostly yes |
-| **Ctrl+J** | Yes | **Yes (universal)** |
+| Backspace | Delete character backward (merges lines) | All |
+| Delete | Delete character forward (merges lines) | All |
+| Ctrl+U | Delete to line start | All |
+| Ctrl+K | Delete to line end | All |
+| Ctrl+W | Delete previous word | All |
+| Ctrl+Z / Cmd+Z | Undo | All \*\* |
+| Ctrl+Y / Ctrl+Shift+Z / Cmd+Shift+Z / Cmd+Y | Redo | All \*\* |
+| Ctrl+L | Clear screen and redraw | All |
+
+\*\* Ctrl+Z/Y work in all terminals. Cmd+Z/Y and Ctrl+Shift+Z require kitty protocol.
+
+#### Cursor Movement
+
+| Key | Action | Terminal |
+|---|---|---|
+| Left / Right | Move cursor (crosses line boundaries) | All |
+| Up / Down | Move between lines (history at boundaries) | All |
+| Alt+Left / Alt+Right | Word jump | All |
+| Ctrl+Left / Ctrl+Right | Word jump | All |
+| Option+Left / Option+Right (ESC+b/f) | Word jump | All (macOS) |
+| Cmd+Left / Cmd+Right | Line start / end | Kitty (macOS) |
+| Ctrl+A / Ctrl+E | Line start / end | All |
+| Cmd+Up / Cmd+Down | Buffer start / end | Kitty (macOS) |
+| Home / End | Line start / end | All |
+
+#### Control
+
+| Key | Action | Terminal |
+|---|---|---|
+| Ctrl+C | Cancel (`CancelError`) | All |
+| Ctrl+D | Submit if input exists, EOF if empty (`EOFError`) | All |
 
 ### Disabling Keys
 
