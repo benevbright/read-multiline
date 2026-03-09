@@ -38,6 +38,7 @@
     "fix:oxlint": "oxlint -c oxlint.json --fix",
     "fix:oxfmt": "oxfmt",
     "prepare": "lefthook install",
+    "publint": "publint",
     "prepublishOnly": "npm run build",
     "changeset": "changeset",
     "release": "npm run build && changeset publish"
@@ -51,6 +52,7 @@
     "organize-imports-cli": "^0.10.0",
     "oxfmt": "^0.35.0",
     "oxlint": "^1.50.0",
+    "publint": "^0.3.18",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
   }
