@@ -1,5 +1,12 @@
 # @toiroakr/read-multiline
 
+## 0.1.2
+
+### Patch Changes
+
+- 18050be: Require cursor at line boundary before history navigation. Up at first line moves cursor to start first; Down at last line moves cursor to end first.
+- c6e4ec7: Migrate package manager from npm to pnpm
+
 ## 0.1.1
 
 ### Patch Changes
