@@ -1,5 +1,12 @@
 # @toiroakr/read-multiline
 
+## 0.2.0
+
+### Minor Changes
+
+- 110bfbe: Add `footer` option to display fixed text below the editor (e.g. help text). The footer appears below the status/error line and persists throughout the editing session.
+- 317c248: Split single-file implementation into focused modules for improved maintainability. Fix onCancel to resolve the promise with current input content instead of leaving it pending. Reduce terminal flicker during screen redraw with output buffering and in-place rendering.
+
 ## 0.1.2
 
 ### Patch Changes
