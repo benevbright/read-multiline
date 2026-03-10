@@ -118,11 +118,23 @@ describe("readMultiline (TTY mode)", () => {
     await expect(promise).rejects.toThrow(CancelError);
   });
 
-  it("submits on Ctrl+D when input exists", async () => {
+  it("calls onCancel instead of throwing CancelError when provided", async () => {
+    const onCancel = vi.fn();
+    readMultiline({ input, output: output.stream, onCancel });
+    input.send("partial");
+    input.send(KEY.CTRL_C);
+    // Promise should not reject - it stays pending
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("deletes character at cursor on Ctrl+D when input exists", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("text");
-    input.send(KEY.CTRL_D);
-    expect(await promise).toBe("text");
+    input.send(KEY.LEFT);
+    input.send(KEY.LEFT);
+    input.send(KEY.CTRL_D); // delete 'x'
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("tet");
   });
 
   it("throws EOFError on Ctrl+D when input is empty", async () => {
@@ -709,11 +721,13 @@ describe("readMultiline (TTY mode)", () => {
     await expect(promise).rejects.toThrow(CancelError);
   });
 
-  it("handles kitty Ctrl+D (CSI 100;5u) with input", async () => {
+  it("handles kitty Ctrl+D (CSI 100;5u) deletes character with input", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("text");
-    input.send("\x1b[100;5u");
-    expect(await promise).toBe("text");
+    input.send(KEY.LEFT);
+    input.send("\x1b[100;5u"); // delete 't' at end
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("tex");
   });
 
   it("handles kitty Ctrl+D (CSI 100;5u) on empty input", async () => {
