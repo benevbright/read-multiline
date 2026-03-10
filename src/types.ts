@@ -128,4 +128,8 @@ export interface EditorState {
 
   // Key map (built once during init)
   keyMap: Record<string, () => void>;
+
+  // Output buffering for flicker-free batch rendering
+  buffering: boolean;
+  writeBuffer: string;
 }

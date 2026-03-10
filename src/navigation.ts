@@ -1,5 +1,5 @@
 import { charAtIndex, charBeforeIndex, charWidth, isWordChar } from "./chars.js";
-import { moveTo, pW, tCol, w } from "./rendering.js";
+import { beginBatch, flushBatch, moveTo, pW, tCol, w } from "./rendering.js";
 import type { EditorState } from "./types.js";
 
 // --- Basic cursor movement ---
@@ -154,6 +154,7 @@ export function bufferEnd(state: EditorState): void {
 
 /** Replace editor content and place cursor at end */
 export function loadContent(state: EditorState, content: string): void {
+  beginBatch(state);
   const newLines = content.split("\n");
   if (state.row > 0) w(state, `\x1b[${state.row}A`);
   w(state, "\r");
@@ -168,6 +169,7 @@ export function loadContent(state: EditorState, content: string): void {
   state.row = state.lines.length - 1;
   state.col = state.lines[state.row].length;
   w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
+  flushBatch(state);
 }
 
 /** Navigate to the previous history entry, saving current content as draft */

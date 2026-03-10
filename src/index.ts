@@ -112,6 +112,8 @@ function readFromTTY(
       submitOnEnter,
       disabledKeys: new Set(disabledKeys),
       keyMap: {},
+      buffering: false,
+      writeBuffer: "",
     };
 
     // --- Resize handling ---

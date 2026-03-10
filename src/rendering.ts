@@ -1,9 +1,28 @@
 import { stringWidth } from "./chars.js";
 import type { EditorState, Snapshot } from "./types.js";
 
-/** Write text to the output stream */
+/** Write text to the output stream (or buffer if batching) */
 export function w(state: EditorState, text: string): void {
-  state.output.write(text);
+  if (state.buffering) {
+    state.writeBuffer += text;
+  } else {
+    state.output.write(text);
+  }
+}
+
+/** Begin buffering output writes for flicker-free batch rendering */
+export function beginBatch(state: EditorState): void {
+  state.buffering = true;
+  state.writeBuffer = "";
+}
+
+/** Flush buffered output with cursor hidden during the write */
+export function flushBatch(state: EditorState): void {
+  state.buffering = false;
+  if (state.writeBuffer) {
+    state.output.write("\x1b[?25l" + state.writeBuffer + "\x1b[?25h");
+    state.writeBuffer = "";
+  }
 }
 
 /** Get the prompt display width for the given row */
@@ -75,6 +94,7 @@ export function redrawFrom(
   targetRow: number,
   targetCol: number,
 ): void {
+  beginBatch(state);
   const dr = state.row - fromRow;
   if (dr > 0) w(state, `\x1b[${dr}A`);
   else if (dr < 0) w(state, `\x1b[${-dr}B`);
@@ -95,23 +115,31 @@ export function redrawFrom(
   state.col = targetCol;
 
   if (state.statusText) drawStatus(state);
+  flushBatch(state);
 }
 
-/** Clear entire screen and redraw all content */
+/** Clear screen and redraw all content with in-place rendering to reduce flicker */
 export function clearScreen(state: EditorState): void {
-  w(state, "\x1b[2J\x1b[H");
-  w(state, state.prompt + state.lines[0]);
+  beginBatch(state);
+  // Move to top-left and overwrite content in-place instead of clearing first
+  if (state.row > 0) w(state, `\x1b[${state.row}A`);
+  w(state, "\r");
+  w(state, state.prompt + state.lines[0] + "\x1b[K");
   for (let i = 1; i < state.lines.length; i++) {
-    w(state, "\n" + state.linePrompt + state.lines[i]);
+    w(state, "\n" + state.linePrompt + state.lines[i] + "\x1b[K");
   }
+  // Clear any remaining lines below
+  w(state, "\x1b[J");
   const endRow = state.lines.length - 1;
   if (endRow > state.row) w(state, `\x1b[${endRow - state.row}A`);
   w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
   if (state.statusText) drawStatus(state);
+  flushBatch(state);
 }
 
 /** Restore editor state from a snapshot and redraw */
 export function restoreSnapshot(state: EditorState, snap: Snapshot): void {
+  beginBatch(state);
   state.lines.length = 0;
   state.lines.push(...snap.lines);
   if (state.row > 0) w(state, `\x1b[${state.row}A`);
@@ -128,6 +156,7 @@ export function restoreSnapshot(state: EditorState, snap: Snapshot): void {
   state.row = snap.row;
   state.col = snap.col;
   if (state.statusText) drawStatus(state);
+  flushBatch(state);
 }
 
 /** Redraw current line after deleting characters of the given display width at cursor */
