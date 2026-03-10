@@ -682,6 +682,8 @@ function readFromTTY(
     function moveUpOrHistory() {
       if (row > 0) {
         moveUp();
+      } else if (col > 0) {
+        moveTo(0, 0);
       } else if (history.length > 0) {
         historyPrev();
       }
@@ -690,6 +692,8 @@ function readFromTTY(
     function moveDownOrHistory() {
       if (row < lines.length - 1) {
         moveDown();
+      } else if (col < lines[row].length) {
+        moveTo(row, lines[row].length);
       } else if (historyIndex < history.length) {
         historyNext();
       }

@@ -774,13 +774,23 @@ describe("readMultiline (TTY mode)", () => {
     expect(await promise).toBe("abc");
   });
 
-  it("does nothing on Up at first line", async () => {
+  it("moves to line start on Up at first line", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("abc");
-    input.send(KEY.UP);
+    input.send(KEY.UP); // col=3 -> col=0
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abcX");
+    expect(await promise).toBe("Xabc");
+  });
+
+  it("does nothing on Up at first line col 0", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("abc");
+    input.send(KEY.HOME);
+    input.send(KEY.UP); // already at col=0, no history, no-op
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("Xabc");
   });
 
   it("does nothing on Down at last line", async () => {
@@ -1044,7 +1054,8 @@ describe("readMultiline (TTY mode)", () => {
       output: output.stream,
       history: ["first", "second"],
     });
-    input.send(KEY.UP); // -> "second"
+    input.send(KEY.UP); // -> "second" (cursor at end)
+    input.send(KEY.UP); // col -> 0 (move to start)
     input.send(KEY.UP); // -> "first"
     input.send(KEY.ENTER);
     expect(await promise).toBe("first");
@@ -1057,10 +1068,42 @@ describe("readMultiline (TTY mode)", () => {
       history: ["first", "second"],
     });
     input.send("draft");
+    input.send(KEY.HOME); // move to col 0
     input.send(KEY.UP); // -> "second"
-    input.send(KEY.DOWN); // -> "draft"
+    input.send(KEY.DOWN); // -> "draft" (cursor at end)
+    input.send(KEY.DOWN); // no-op (already at current draft)
     input.send(KEY.ENTER);
     expect(await promise).toBe("draft");
+  });
+
+  it("Up at first line with col > 0 moves to col 0 instead of history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["old"],
+    });
+    input.send("text");
+    input.send(KEY.UP); // col=4 -> col=0 (not history)
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("Xtext");
+  });
+
+  it("Down at last line with col < end moves to end instead of history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["old"],
+    });
+    input.send("text");
+    input.send(KEY.HOME); // col=0
+    input.send(KEY.UP); // history -> "old"
+    input.send(KEY.DOWN); // -> "text" (cursor at end)
+    input.send(KEY.HOME); // col=0
+    input.send(KEY.DOWN); // col=0 -> col=end (not next history)
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("textX");
   });
 
   it("does not go past beginning of history", async () => {
