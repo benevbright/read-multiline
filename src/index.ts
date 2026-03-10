@@ -1,7 +1,7 @@
 import { stringWidth } from "./chars.js";
 import { handleDelete } from "./editing.js";
 import { buildKeyMap, onData } from "./input.js";
-import { clearScreen, clearStatus, setStatus, w } from "./rendering.js";
+import { clearBelowEditor, clearScreen, setStatus, tCol, w } from "./rendering.js";
 import type { EditorState, ReadMultilineOptions, TTYInput } from "./types.js";
 import { CancelError, EOFError } from "./types.js";
 
@@ -81,6 +81,7 @@ function readFromTTY(
       validateDebounceMs = 300,
       submitOnEnter = true,
       disabledKeys = [],
+      footer,
     } = options;
 
     const state: EditorState = {
@@ -94,6 +95,7 @@ function readFromTTY(
       linePromptWidth: stringWidth(linePrompt),
       statusText: "",
       statusColor: "",
+      footerText: footer ?? "",
       history: historyEntries ? [...historyEntries] : [],
       historyIndex: historyEntries ? historyEntries.length : 0,
       draft: initialValue ?? "",
@@ -139,7 +141,7 @@ function readFromTTY(
       if (resizeHandler && typeof ttyOutput.removeListener === "function") {
         ttyOutput.removeListener("resize", resizeHandler);
       }
-      clearStatus(state);
+      clearBelowEditor(state);
       w(state, "\x1b[?2004l"); // Disable bracketed paste mode
       w(state, "\x1b[<u"); // Disable kitty protocol
       input.setRawMode?.(false);
@@ -200,6 +202,16 @@ function readFromTTY(
       }
       state.row = state.lines.length - 1;
       state.col = state.lines[state.row].length;
+    }
+
+    if (footer) {
+      const endRow = state.lines.length - 1;
+      const dr = endRow - state.row;
+      if (dr > 0) w(state, `\x1b[${dr}B`);
+      w(state, "\r\n" + footer + "\x1b[K");
+      const upCount = endRow + 1 - state.row;
+      if (upCount > 0) w(state, `\x1b[${upCount}A`);
+      w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
     }
 
     input.setRawMode?.(true);

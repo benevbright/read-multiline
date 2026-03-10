@@ -45,21 +45,46 @@ export function moveTo(state: EditorState, newRow: number, newCol: number): void
   state.col = newCol;
 }
 
-/** Draw the status line below the editor content */
-export function drawStatus(state: EditorState): void {
-  if (!state.statusText) return;
+/** Draw status line and footer below the editor content, then return cursor to position */
+function drawBelowEditor(state: EditorState): void {
+  if (!state.statusText && !state.footerText) return;
+
   const endRow = state.lines.length - 1;
   const dr = endRow - state.row;
   if (dr > 0) w(state, `\x1b[${dr}B`);
   else if (dr < 0) w(state, `\x1b[${-dr}A`);
-  w(state, "\r\n");
-  if (state.statusColor === "red") w(state, "\x1b[31m");
-  else if (state.statusColor === "green") w(state, "\x1b[32m");
-  w(state, state.statusText);
-  if (state.statusColor) w(state, "\x1b[0m");
-  w(state, "\x1b[K");
-  const linesDown = endRow + 1;
-  const upCount = linesDown - state.row;
+
+  let linesBelow = 0;
+
+  if (state.statusText) {
+    w(state, "\r\n");
+    linesBelow++;
+    if (state.statusColor === "red") w(state, "\x1b[31m");
+    else if (state.statusColor === "green") w(state, "\x1b[32m");
+    w(state, state.statusText);
+    if (state.statusColor) w(state, "\x1b[0m");
+    w(state, "\x1b[K");
+  }
+
+  if (state.footerText) {
+    w(state, "\r\n");
+    linesBelow++;
+    w(state, state.footerText + "\x1b[K");
+  }
+
+  const upCount = endRow - state.row + linesBelow;
+  if (upCount > 0) w(state, `\x1b[${upCount}A`);
+  w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
+}
+
+/** Clear everything below the editor (status + footer) and return cursor to position */
+function clearBelowAndReturn(state: EditorState): void {
+  const endRow = state.lines.length - 1;
+  const dr = endRow - state.row;
+  if (dr > 0) w(state, `\x1b[${dr}B`);
+  else if (dr < 0) w(state, `\x1b[${-dr}A`);
+  w(state, "\r\n\x1b[J");
+  const upCount = endRow + 1 - state.row;
   if (upCount > 0) w(state, `\x1b[${upCount}A`);
   w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
 }
@@ -67,24 +92,26 @@ export function drawStatus(state: EditorState): void {
 /** Clear the status line and reset status state */
 export function clearStatus(state: EditorState): void {
   if (!state.statusText) return;
-  const endRow = state.lines.length - 1;
-  const dr = endRow - state.row;
-  if (dr > 0) w(state, `\x1b[${dr}B`);
-  else if (dr < 0) w(state, `\x1b[${-dr}A`);
-  w(state, "\r\n\x1b[K");
-  const upCount = endRow + 1 - state.row;
-  if (upCount > 0) w(state, `\x1b[${upCount}A`);
-  w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
+  clearBelowAndReturn(state);
   state.statusText = "";
   state.statusColor = "";
+  drawBelowEditor(state);
 }
 
 /** Display or update the status line with the given text and color */
 export function setStatus(state: EditorState, text: string, color: "red" | "green" | ""): void {
-  clearStatus(state);
+  if (state.statusText || state.footerText) clearBelowAndReturn(state);
   state.statusText = text;
   state.statusColor = color;
-  if (text) drawStatus(state);
+  drawBelowEditor(state);
+}
+
+/** Clear all content below the editor (status and footer) for cleanup */
+export function clearBelowEditor(state: EditorState): void {
+  if (!state.statusText && !state.footerText) return;
+  clearBelowAndReturn(state);
+  state.statusText = "";
+  state.statusColor = "";
 }
 
 /** Redraw all lines from fromRow onwards, placing cursor at (targetRow, targetCol) */
@@ -114,7 +141,7 @@ export function redrawFrom(
   state.row = targetRow;
   state.col = targetCol;
 
-  if (state.statusText) drawStatus(state);
+  drawBelowEditor(state);
   flushBatch(state);
 }
 
@@ -133,7 +160,7 @@ export function clearScreen(state: EditorState): void {
   const endRow = state.lines.length - 1;
   if (endRow > state.row) w(state, `\x1b[${endRow - state.row}A`);
   w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
-  if (state.statusText) drawStatus(state);
+  drawBelowEditor(state);
   flushBatch(state);
 }
 
@@ -155,7 +182,7 @@ export function restoreSnapshot(state: EditorState, snap: Snapshot): void {
   w(state, `\x1b[${tCol(state, snap.row, snap.col)}G`);
   state.row = snap.row;
   state.col = snap.col;
-  if (state.statusText) drawStatus(state);
+  drawBelowEditor(state);
   flushBatch(state);
 }
 

@@ -63,6 +63,9 @@ export interface ReadMultilineOptions {
    * Disabled keys are ignored (neither submit nor newline).
    */
   disabledKeys?: ModifiedEnterKey[];
+
+  /** Fixed footer text displayed below the editor (e.g. help text). Appears below the status line. */
+  footer?: string;
 }
 
 /** Key combinations that can be used as modified Enter keys. These can be disabled via the disabledKeys option. */
@@ -98,6 +101,9 @@ export interface EditorState {
   // Status line
   statusText: string;
   statusColor: "red" | "green" | "";
+
+  // Footer
+  footerText: string;
 
   // History
   history: string[];

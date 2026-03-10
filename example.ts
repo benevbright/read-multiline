@@ -1,22 +1,7 @@
-import { readMultiline, CancelError, EOFError } from "./src/index.js";
+import { styleText } from "node:util";
+import { CancelError, EOFError, readMultiline } from "./src/index.js";
 
-console.log("Multi-line input test");
-console.log("  Enter:              Submit input");
-console.log("  Shift/Ctrl/Cmd+Enter, Ctrl+J: Insert newline");
-console.log("  Left/Right:         Cursor movement");
-console.log("  Up/Down:            Move between lines / history");
-console.log("  Alt+Left/Right:     Word jump");
-console.log("  Cmd+Left/Right:     Line start/end");
-console.log("  Cmd+Up/Down:        Buffer start/end");
-console.log("  Delete:             Forward delete");
-console.log("  Ctrl+U:             Delete to line start");
-console.log("  Ctrl+K:             Delete to line end");
-console.log("  Ctrl+Z:             Undo");
-console.log("  Ctrl+Shift+Z/Ctrl+Y: Redo");
-console.log("  Ctrl+L:             Clear screen");
-console.log("  Ctrl+C:             Cancel");
-console.log("  Ctrl+D:             Submit / EOF if empty");
-console.log("");
+console.log("Multi-line input test\n");
 
 const history: string[] = [];
 
@@ -26,9 +11,13 @@ while (true) {
       prompt: "> ",
       linePrompt: "  ",
       history,
-      maxLines: 10,
+      maxLines: 100,
       maxLength: 500,
       validate: (v) => (v.trim().length === 0 ? "Input cannot be empty" : undefined),
+      footer: styleText(
+        "dim",
+        "Enter: submit | Shift+Enter: newline | Ctrl+Z: undo | Ctrl+C: cancel | Ctrl+D: EOF",
+      ),
     });
 
     console.log("");
