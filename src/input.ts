@@ -31,6 +31,7 @@ const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 const ESC_TIMEOUT = 50; // ms
 
+/** Build the key-to-action mapping based on options and callbacks */
 export function buildKeyMap(
   state: EditorState,
   submit: () => void,
@@ -146,6 +147,7 @@ function processPaste(state: EditorState, text: string): void {
   }
 }
 
+/** Process an input sequence: handle paste markers, key map lookups, and character insertion */
 export function processInput(state: EditorState, seq: string): void {
   // Paste start marker
   const startIdx = seq.indexOf(PASTE_START);
@@ -200,6 +202,7 @@ function flushEscBuffer(state: EditorState): void {
   }
 }
 
+/** Handle raw data from the input stream, buffering ESC sequences as needed */
 export function onData(state: EditorState, data: Buffer): void {
   const seq = data.toString();
 

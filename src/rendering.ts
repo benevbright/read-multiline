@@ -1,19 +1,22 @@
 import { stringWidth } from "./chars.js";
 import type { EditorState, Snapshot } from "./types.js";
 
+/** Write text to the output stream */
 export function w(state: EditorState, text: string): void {
   state.output.write(text);
 }
 
+/** Get the prompt display width for the given row */
 export function pW(state: EditorState, r: number): number {
   return r === 0 ? state.promptWidth : state.linePromptWidth;
 }
 
-// 1-based terminal column from line start to code unit index c, accounting for display width
+/** Get 1-based terminal column from line start to code unit index, accounting for display width */
 export function tCol(state: EditorState, r: number, c: number): number {
   return pW(state, r) + stringWidth(state.lines[r].slice(0, c)) + 1;
 }
 
+/** Move terminal cursor from current position to (newRow, newCol) */
 export function moveTo(state: EditorState, newRow: number, newCol: number): void {
   const dr = newRow - state.row;
   if (dr < 0) w(state, `\x1b[${-dr}A`);
@@ -23,6 +26,7 @@ export function moveTo(state: EditorState, newRow: number, newCol: number): void
   state.col = newCol;
 }
 
+/** Draw the status line below the editor content */
 export function drawStatus(state: EditorState): void {
   if (!state.statusText) return;
   const endRow = state.lines.length - 1;
@@ -41,6 +45,7 @@ export function drawStatus(state: EditorState): void {
   w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
 }
 
+/** Clear the status line and reset status state */
 export function clearStatus(state: EditorState): void {
   if (!state.statusText) return;
   const endRow = state.lines.length - 1;
@@ -55,6 +60,7 @@ export function clearStatus(state: EditorState): void {
   state.statusColor = "";
 }
 
+/** Display or update the status line with the given text and color */
 export function setStatus(state: EditorState, text: string, color: "red" | "green" | ""): void {
   clearStatus(state);
   state.statusText = text;
@@ -62,6 +68,7 @@ export function setStatus(state: EditorState, text: string, color: "red" | "gree
   if (text) drawStatus(state);
 }
 
+/** Redraw all lines from fromRow onwards, placing cursor at (targetRow, targetCol) */
 export function redrawFrom(
   state: EditorState,
   fromRow: number,
@@ -90,6 +97,7 @@ export function redrawFrom(
   if (state.statusText) drawStatus(state);
 }
 
+/** Clear entire screen and redraw all content */
 export function clearScreen(state: EditorState): void {
   w(state, "\x1b[2J\x1b[H");
   w(state, state.prompt + state.lines[0]);
@@ -102,6 +110,7 @@ export function clearScreen(state: EditorState): void {
   if (state.statusText) drawStatus(state);
 }
 
+/** Restore editor state from a snapshot and redraw */
 export function restoreSnapshot(state: EditorState, snap: Snapshot): void {
   state.lines.length = 0;
   state.lines.push(...snap.lines);
@@ -121,7 +130,7 @@ export function restoreSnapshot(state: EditorState, snap: Snapshot): void {
   if (state.statusText) drawStatus(state);
 }
 
-// Redraw current line after deleting characters of the given display width at cursor
+/** Redraw current line after deleting characters of the given display width at cursor */
 export function redrawAfterDelete(state: EditorState, deletedWidth: number): void {
   const rest = state.lines[state.row].slice(state.col);
   const restW = stringWidth(rest);

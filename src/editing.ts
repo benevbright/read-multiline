@@ -21,10 +21,12 @@ const MAX_UNDO = 200;
 
 // --- Undo / Redo ---
 
+/** Capture current editor state as a snapshot for undo/redo */
 export function takeSnapshot(state: EditorState): Snapshot {
   return { lines: [...state.lines], row: state.row, col: state.col };
 }
 
+/** Push current state to undo stack, grouping consecutive character insertions */
 export function saveUndo(state: EditorState, editType: "insert" | "other" = "other"): void {
   if (editType === "insert" && state.lastEditType === "insert" && state.undoStack.length > 0) {
     state.lastEditType = editType;
@@ -36,6 +38,7 @@ export function saveUndo(state: EditorState, editType: "insert" | "other" = "oth
   state.redoStack.length = 0;
 }
 
+/** Restore previous state from undo stack */
 export function undo(state: EditorState): void {
   if (state.undoStack.length === 0) return;
   state.redoStack.push(takeSnapshot(state));
@@ -45,6 +48,7 @@ export function undo(state: EditorState): void {
   onContentChanged(state);
 }
 
+/** Restore next state from redo stack */
 export function redo(state: EditorState): void {
   if (state.redoStack.length === 0) return;
   state.undoStack.push(takeSnapshot(state));
@@ -70,6 +74,7 @@ function scheduleValidation(state: EditorState): void {
   }, state.validateDebounceMs);
 }
 
+/** Handle content changes: check limits and trigger validation */
 export function onContentChanged(state: EditorState): void {
   if (state.maxLength != null) {
     const len = contentLength(state.lines);
@@ -116,6 +121,7 @@ function canInsertNewline(state: EditorState): boolean {
 
 // --- Editing operations ---
 
+/** Insert a character at the current cursor position */
 export function insertChar(state: EditorState, ch: string): void {
   if (!canInsertChar(state, [...ch].length)) return;
   if (!state.isPasting) saveUndo(state, "insert");
@@ -129,6 +135,7 @@ export function insertChar(state: EditorState, ch: string): void {
   onContentChanged(state);
 }
 
+/** Insert a newline at the current cursor position, splitting the current line */
 export function insertNewline(state: EditorState): void {
   if (!canInsertNewline(state)) return;
   if (!state.isPasting) saveUndo(state);
@@ -139,6 +146,7 @@ export function insertNewline(state: EditorState): void {
   onContentChanged(state);
 }
 
+/** Delete the character before cursor, merging lines at line boundaries */
 export function handleBackspace(state: EditorState): void {
   if (state.col > 0) {
     saveUndo(state);
@@ -159,6 +167,7 @@ export function handleBackspace(state: EditorState): void {
   }
 }
 
+/** Delete the character at cursor, merging lines at line boundaries */
 export function handleDelete(state: EditorState): void {
   if (state.col < state.lines[state.row].length) {
     saveUndo(state);
@@ -181,6 +190,7 @@ export function handleDelete(state: EditorState): void {
   }
 }
 
+/** Delete all characters from cursor to the start of the current line */
 export function deleteToLineStart(state: EditorState): void {
   if (state.col === 0) return;
   saveUndo(state);
@@ -194,6 +204,7 @@ export function deleteToLineStart(state: EditorState): void {
   onContentChanged(state);
 }
 
+/** Delete all characters from cursor to the end of the current line */
 export function deleteToLineEnd(state: EditorState): void {
   if (state.col >= state.lines[state.row].length) return;
   saveUndo(state);
@@ -202,6 +213,7 @@ export function deleteToLineEnd(state: EditorState): void {
   onContentChanged(state);
 }
 
+/** Delete the previous word (Ctrl+W behavior) */
 export function deleteWordBack(state: EditorState): void {
   if (state.col === 0) {
     handleBackspace(state);

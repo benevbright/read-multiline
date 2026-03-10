@@ -4,6 +4,7 @@ import type { EditorState } from "./types.js";
 
 // --- Basic cursor movement ---
 
+/** Move cursor one character to the left, crossing line boundaries */
 export function moveLeft(state: EditorState): void {
   if (state.col > 0) {
     const ch = charBeforeIndex(state.lines[state.row], state.col);
@@ -15,6 +16,7 @@ export function moveLeft(state: EditorState): void {
   }
 }
 
+/** Move cursor one character to the right, crossing line boundaries */
 export function moveRight(state: EditorState): void {
   if (state.col < state.lines[state.row].length) {
     const ch = charAtIndex(state.lines[state.row], state.col);
@@ -26,12 +28,14 @@ export function moveRight(state: EditorState): void {
   }
 }
 
+/** Move cursor one line up */
 export function moveUp(state: EditorState): void {
   if (state.row > 0) {
     moveTo(state, state.row - 1, Math.min(state.col, state.lines[state.row - 1].length));
   }
 }
 
+/** Move cursor one line down */
 export function moveDown(state: EditorState): void {
   if (state.row < state.lines.length - 1) {
     moveTo(state, state.row + 1, Math.min(state.col, state.lines[state.row + 1].length));
@@ -40,6 +44,7 @@ export function moveDown(state: EditorState): void {
 
 // --- Up/Down with history support ---
 
+/** Move up or navigate history when at the first line */
 export function moveUpOrHistory(state: EditorState): void {
   if (state.row > 0) {
     moveUp(state);
@@ -50,6 +55,7 @@ export function moveUpOrHistory(state: EditorState): void {
   }
 }
 
+/** Move down or navigate history when at the last line */
 export function moveDownOrHistory(state: EditorState): void {
   if (state.row < state.lines.length - 1) {
     moveDown(state);
@@ -62,6 +68,7 @@ export function moveDownOrHistory(state: EditorState): void {
 
 // --- Word jump ---
 
+/** Jump cursor to the end of the next word */
 export function wordRight(state: EditorState): void {
   let r = state.row,
     c = state.col;
@@ -80,6 +87,7 @@ export function wordRight(state: EditorState): void {
   if (r !== state.row || c !== state.col) moveTo(state, r, c);
 }
 
+/** Jump cursor to the start of the previous word */
 export function wordLeft(state: EditorState): void {
   let r = state.row,
     c = state.col;
@@ -119,19 +127,23 @@ export function wordLeft(state: EditorState): void {
 
 // --- Line start/end, buffer start/end ---
 
+/** Move cursor to the start of the current line */
 export function lineStart(state: EditorState): void {
   if (state.col !== 0) moveTo(state, state.row, 0);
 }
 
+/** Move cursor to the end of the current line */
 export function lineEnd(state: EditorState): void {
   if (state.col !== state.lines[state.row].length)
     moveTo(state, state.row, state.lines[state.row].length);
 }
 
+/** Move cursor to the start of the entire input */
 export function bufferStart(state: EditorState): void {
   if (state.row !== 0 || state.col !== 0) moveTo(state, 0, 0);
 }
 
+/** Move cursor to the end of the entire input */
 export function bufferEnd(state: EditorState): void {
   const lastRow = state.lines.length - 1;
   const lastCol = state.lines[lastRow].length;
@@ -140,6 +152,7 @@ export function bufferEnd(state: EditorState): void {
 
 // --- History ---
 
+/** Replace editor content and place cursor at end */
 export function loadContent(state: EditorState, content: string): void {
   const newLines = content.split("\n");
   if (state.row > 0) w(state, `\x1b[${state.row}A`);
@@ -157,6 +170,7 @@ export function loadContent(state: EditorState, content: string): void {
   w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
 }
 
+/** Navigate to the previous history entry, saving current content as draft */
 export function historyPrev(state: EditorState): void {
   if (state.historyIndex <= 0) return;
   if (state.historyIndex === state.history.length) {
@@ -166,6 +180,7 @@ export function historyPrev(state: EditorState): void {
   loadContent(state, state.history[state.historyIndex]);
 }
 
+/** Navigate to the next history entry, or restore draft at the end */
 export function historyNext(state: EditorState): void {
   if (state.historyIndex >= state.history.length) return;
   state.historyIndex++;

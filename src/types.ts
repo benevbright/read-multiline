@@ -1,3 +1,4 @@
+/** Error thrown when the user cancels input with Ctrl+C (when no onCancel callback is provided). */
 export class CancelError extends Error {
   constructor() {
     super("Input cancelled");
@@ -5,6 +6,7 @@ export class CancelError extends Error {
   }
 }
 
+/** Error thrown when Ctrl+D is pressed on empty input. */
 export class EOFError extends Error {
   constructor() {
     super("EOF received on empty input");
@@ -63,8 +65,10 @@ export interface ReadMultilineOptions {
   disabledKeys?: ModifiedEnterKey[];
 }
 
+/** Key combinations that can be used as modified Enter keys. These can be disabled via the disabledKeys option. */
 export type ModifiedEnterKey = "shift+enter" | "ctrl+enter" | "cmd+enter" | "alt+enter" | "ctrl+j";
 
+/** A readable stream with optional TTY capabilities for character-by-character raw mode input. */
 export interface TTYInput extends NodeJS.ReadableStream {
   isTTY?: boolean;
   setRawMode?(mode: boolean): void;
