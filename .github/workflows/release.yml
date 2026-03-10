@@ -36,7 +36,7 @@ jobs:
         uses: changesets/action@v1
         with:
           version: pnpm exec changeset version
-          publish: pnpm exec changeset publish
+          publish: npx changeset publish
           title: "chore: release"
           commit: "chore: release"
           createGithubReleases: true
