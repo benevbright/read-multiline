@@ -43,6 +43,9 @@ export interface ReadMultilineOptions {
   /** Debounce interval (ms) for live validation after first submit failure (default: 300) */
   validateDebounceMs?: number;
 
+  /** Callback invoked when Ctrl+C is pressed. Called after cleanup. Default: rejects with CancelError. */
+  onCancel?: () => void;
+
   /**
    * Whether Enter submits the input (default: true).
    * - true: Enter=submit, modified Enter (Shift/Ctrl/Cmd/Alt+Enter, Ctrl+J)=newline
@@ -83,7 +86,7 @@ export interface TTYInput extends NodeJS.ReadableStream {
  * - Cmd+Left/Right (Home/End): Jump to line start/end
  * - Cmd+Up/Down: Jump to start/end of entire input
  * - Ctrl+C: Cancel (rejects with CancelError)
- * - Ctrl+D: Submit if input exists, EOF if empty (rejects with EOFError)
+ * - Ctrl+D: Delete character at cursor (same as Delete key), EOF if empty (rejects with EOFError)
  * - Ctrl+L: Clear screen and redraw
  * - Ctrl+Z: Undo
  * - Ctrl+Shift+Z / Ctrl+Y: Redo
@@ -950,14 +953,18 @@ function readFromTTY(
         w("\n");
         reject(new EOFError());
       } else {
-        submit();
+        handleDelete();
       }
     }
 
     function cancel() {
       cleanup();
       w("\n");
-      reject(new CancelError());
+      if (options.onCancel) {
+        options.onCancel();
+      } else {
+        reject(new CancelError());
+      }
     }
 
     // Buffer ESC when it arrives alone, waiting for subsequent bytes to form a sequence
