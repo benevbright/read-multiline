@@ -175,6 +175,7 @@ function readFromTTY(
       w(state, "\n");
       if (options.onCancel) {
         options.onCancel();
+        resolve(state.lines.join("\n"));
       } else {
         reject(new CancelError());
       }

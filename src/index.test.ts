@@ -118,13 +118,13 @@ describe("readMultiline (TTY mode)", () => {
     await expect(promise).rejects.toThrow(CancelError);
   });
 
-  it("calls onCancel instead of throwing CancelError when provided", async () => {
+  it("calls onCancel and resolves with current content when provided", async () => {
     const onCancel = vi.fn();
-    readMultiline({ input, output: output.stream, onCancel });
+    const promise = readMultiline({ input, output: output.stream, onCancel });
     input.send("partial");
     input.send(KEY.CTRL_C);
-    // Promise should not reject - it stays pending
     expect(onCancel).toHaveBeenCalledOnce();
+    expect(await promise).toBe("partial");
   });
 
   it("deletes character at cursor on Ctrl+D when input exists", async () => {
