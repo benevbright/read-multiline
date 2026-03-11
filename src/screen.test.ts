@@ -1,7 +1,16 @@
 import { Terminal } from "@xterm/headless";
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readMultiline, type TTYInput } from "./index.js";
+import {
+  readMultiline as _readMultiline,
+  type ReadMultilineOptions,
+  type TTYInput,
+} from "./index.js";
+
+/** readMultiline with helpFooter disabled by default for screen tests */
+function readMultiline(options: ReadMultilineOptions = {}): Promise<string> {
+  return _readMultiline({ helpFooter: false, ...options });
+}
 
 // Virtual terminal that feeds ANSI output into @xterm/headless
 function createVirtualTerminal(cols = 80, rows = 24) {
