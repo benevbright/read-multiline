@@ -385,25 +385,25 @@ describe("readMultiline (TTY mode)", () => {
     expect(await promise).toBe("Xab\ncd");
   });
 
-  // --- Ctrl+Arrow (word jump) ---
+  // --- Ctrl+Arrow (line start/end, buffer start/end) ---
 
-  it("jumps to word end on Ctrl+Right", async () => {
+  it("moves to line end on Ctrl+Right", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("hello world");
     for (let i = 0; i < 11; i++) input.send(KEY.LEFT);
-    input.send(KEY.CTRL_RIGHT); // hello|
+    input.send(KEY.CTRL_RIGHT); // -> end of line
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("helloX world");
+    expect(await promise).toBe("hello worldX");
   });
 
-  it("jumps to word start on Ctrl+Left", async () => {
+  it("moves to line start on Ctrl+Left", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("hello world");
-    input.send(KEY.CTRL_LEFT); // |world
+    input.send(KEY.CTRL_LEFT); // -> start of line
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello Xworld");
+    expect(await promise).toBe("Xhello world");
   });
 
   // --- ESC+b/f (macOS Option+Arrow fallback) ---
@@ -1054,9 +1054,8 @@ describe("readMultiline (TTY mode)", () => {
       output: output.stream,
       history: ["first", "second"],
     });
-    input.send(KEY.UP); // -> "second" (cursor at end)
-    input.send(KEY.UP); // col -> 0 (move to start)
-    input.send(KEY.UP); // -> "first"
+    input.send(KEY.UP); // -> "second" (cursor at start)
+    input.send(KEY.UP); // -> "first" (cursor already at start)
     input.send(KEY.ENTER);
     expect(await promise).toBe("first");
   });
@@ -1069,7 +1068,8 @@ describe("readMultiline (TTY mode)", () => {
     });
     input.send("draft");
     input.send(KEY.HOME); // move to col 0
-    input.send(KEY.UP); // -> "second"
+    input.send(KEY.UP); // -> "second" (cursor at start)
+    input.send(KEY.DOWN); // col=0 -> col=end (move to end, not history)
     input.send(KEY.DOWN); // -> "draft" (cursor at end)
     input.send(KEY.DOWN); // no-op (already at current draft)
     input.send(KEY.ENTER);
@@ -1097,7 +1097,8 @@ describe("readMultiline (TTY mode)", () => {
     });
     input.send("text");
     input.send(KEY.HOME); // col=0
-    input.send(KEY.UP); // history -> "old"
+    input.send(KEY.UP); // history -> "old" (cursor at start)
+    input.send(KEY.DOWN); // col=0 -> col=end (move to end, not history)
     input.send(KEY.DOWN); // -> "text" (cursor at end)
     input.send(KEY.HOME); // col=0
     input.send(KEY.DOWN); // col=0 -> col=end (not next history)
@@ -1149,17 +1150,17 @@ describe("readMultiline (TTY mode)", () => {
     expect(await promise).toBe("line1\nline2X");
   });
 
-  it("Alt+Up/Down always moves cursor, never triggers history", async () => {
+  it("Alt+Up/Down navigates history directly", async () => {
     const promise = readMultiline({
       input,
       output: output.stream,
       history: ["old"],
     });
     input.send("only line");
-    input.send(KEY.ALT_UP); // pure move up (no-op on first line)
+    input.send(KEY.ALT_UP); // -> "old" (history prev, cursor at start)
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("only lineX");
+    expect(await promise).toBe("Xold");
   });
 
   it("navigates multi-line history entries", async () => {

@@ -46,7 +46,7 @@ export function moveTo(state: EditorState, newRow: number, newCol: number): void
 }
 
 /** Draw status line and footer below the editor content, then return cursor to position */
-function drawBelowEditor(state: EditorState): void {
+export function drawBelowEditor(state: EditorState): void {
   if (!state.statusText && !state.footerText) return;
 
   const endRow = state.lines.length - 1;

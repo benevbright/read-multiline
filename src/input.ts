@@ -13,13 +13,13 @@ import {
 import {
   bufferEnd,
   bufferStart,
+  historyNext,
+  historyPrev,
   lineEnd,
   lineStart,
-  moveDown,
   moveDownOrHistory,
   moveLeft,
   moveRight,
-  moveUp,
   moveUpOrHistory,
   wordLeft,
   wordRight,
@@ -101,17 +101,27 @@ export function buildKeyMap(
   keyMap["\x1b[C"] = () => moveRight(state);
   keyMap["\x1b[D"] = () => moveLeft(state);
 
-  // Alt+Arrow (word jump)
+  // Alt+Arrow
   keyMap["\x1b[1;3C"] = () => wordRight(state);
   keyMap["\x1b[1;3D"] = () => wordLeft(state);
-  keyMap["\x1b[1;3A"] = () => moveUp(state);
-  keyMap["\x1b[1;3B"] = () => moveDown(state);
+  keyMap["\x1b[1;3A"] = () => historyPrev(state);
+  keyMap["\x1b[1;3B"] = () => historyNext(state);
 
-  // Ctrl+Arrow (word jump)
-  keyMap["\x1b[1;5C"] = () => wordRight(state);
-  keyMap["\x1b[1;5D"] = () => wordLeft(state);
-  keyMap["\x1b[1;5A"] = () => moveUp(state);
-  keyMap["\x1b[1;5B"] = () => moveDown(state);
+  // Ctrl+Arrow (line/buffer navigation)
+  keyMap["\x1b[1;5C"] = () => lineEnd(state);
+  keyMap["\x1b[1;5D"] = () => lineStart(state);
+  keyMap["\x1b[1;5A"] = () => bufferStart(state);
+  keyMap["\x1b[1;5B"] = () => bufferEnd(state);
+
+  // Ctrl+P/N (history navigation)
+  keyMap["\x10"] = () => historyPrev(state); // Ctrl+P
+  keyMap["\x1b[112;5u"] = () => historyPrev(state); // kitty Ctrl+P
+  keyMap["\x0e"] = () => historyNext(state); // Ctrl+N
+  keyMap["\x1b[110;5u"] = () => historyNext(state); // kitty Ctrl+N
+
+  // PageUp/PageDown (history navigation)
+  keyMap["\x1b[5~"] = () => historyPrev(state); // PageUp
+  keyMap["\x1b[6~"] = () => historyNext(state); // PageDown
 
   // macOS Option+Arrow
   keyMap["\x1bb"] = () => wordLeft(state); // ESC+b

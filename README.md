@@ -6,14 +6,15 @@ Simple multi-line input reader for Node.js terminals. Solves the limitation of N
 
 - **Enter** to submit, **Shift+Enter** / **Ctrl+J** to insert newlines (swappable)
 - Arrow key cursor navigation across lines
-- **Alt+Arrow** for word jumping, **Cmd+Arrow** for line/buffer jumping
+- **Alt+Arrow** for word jumping / history, **Ctrl+Arrow** / **Cmd+Arrow** for line/buffer jumping
 - **Delete**, **Ctrl+U**, **Ctrl+K** for forward delete and line editing
 - **Ctrl+W** to delete previous word
 - **Ctrl+Z** / **Ctrl+Y** for undo/redo
 - **Ctrl+L** to clear screen and redraw
 - Full-width (CJK) character support with correct cursor positioning
 - Bracketed paste mode for multi-line paste
-- Input history navigation (Up/Down at boundaries)
+- Input history navigation (Up/Down at boundaries, Alt+Up/Down, Ctrl+P/N, PageUp/PageDown)
+- File-based persistent history with automatic load/save
 - Initial value pre-population
 - Validation with debounced live feedback
 - Max lines / max character length enforcement
@@ -39,7 +40,7 @@ try {
   const input = await readMultiline({
     prompt: "> ",
     linePrompt: "  ",
-    history: ["previous input"],
+    history: { filePath: "./history.json" },
     maxLines: 10,
     maxLength: 1000,
     validate: (v) => (v.trim() === "" ? "Input cannot be empty" : undefined),
@@ -58,20 +59,21 @@ try {
 
 ### `readMultiline(options?): Promise<string>`
 
-| Option               | Type                                             | Default          | Description                                          |
-| -------------------- | ------------------------------------------------ | ---------------- | ---------------------------------------------------- |
-| `prompt`             | `string`                                         | `""`             | Prompt for the first line                            |
-| `linePrompt`         | `string`                                         | same as `prompt` | Prompt for continuation lines                        |
-| `input`              | `TTYInput`                                       | `process.stdin`  | Input stream                                         |
-| `output`             | `WritableStream`                                 | `process.stdout` | Output stream                                        |
-| `initialValue`       | `string`                                         | `undefined`      | Pre-populate the input                               |
-| `history`            | `string[]`                                       | `[]`             | History entries (oldest first)                       |
-| `maxLines`           | `number`                                         | `undefined`      | Maximum number of lines                              |
-| `maxLength`          | `number`                                         | `undefined`      | Maximum total character count                        |
-| `validate`           | `(value: string) => string \| undefined \| null` | `undefined`      | Validation function (return error message to reject) |
-| `validateDebounceMs` | `number`                                         | `300`            | Debounce interval for live validation                |
-| `submitOnEnter`      | `boolean`                                        | `true`           | `true`: Enter=submit, `false`: Enter=newline         |
-| `disabledKeys`       | `ModifiedEnterKey[]`                             | `[]`             | Key combos to disable                                |
+| Option                   | Type                                             | Default          | Description                                          |
+| ------------------------ | ------------------------------------------------ | ---------------- | ---------------------------------------------------- |
+| `prompt`                 | `string`                                         | `""`             | Prompt for the first line                            |
+| `linePrompt`             | `string`                                         | same as `prompt` | Prompt for continuation lines                        |
+| `input`                  | `TTYInput`                                       | `process.stdin`  | Input stream                                         |
+| `output`                 | `WritableStream`                                 | `process.stdout` | Output stream                                        |
+| `initialValue`           | `string`                                         | `undefined`      | Pre-populate the input                               |
+| `history`                | `string[] \| HistoryOptions`                     | `[]`             | History entries or file-based persistent history     |
+| `historyArrowNavigation` | `"single" \| "double" \| "disabled"`             | `"single"`       | How Up/Down interacts with history at boundaries     |
+| `maxLines`               | `number`                                         | `undefined`      | Maximum number of lines                              |
+| `maxLength`              | `number`                                         | `undefined`      | Maximum total character count                        |
+| `validate`               | `(value: string) => string \| undefined \| null` | `undefined`      | Validation function (return error message to reject) |
+| `validateDebounceMs`     | `number`                                         | `300`            | Debounce interval for live validation                |
+| `submitOnEnter`          | `boolean`                                        | `true`           | `true`: Enter=submit, `false`: Enter=newline         |
+| `disabledKeys`           | `ModifiedEnterKey[]`                             | `[]`             | Key combos to disable                                |
 
 ### Key Bindings
 
@@ -116,7 +118,11 @@ The following table shows all key bindings and their availability across termina
 | Left / Right                         | Move cursor (crosses line boundaries)      | All           |
 | Up / Down                            | Move between lines (history at boundaries) | All           |
 | Alt+Left / Alt+Right                 | Word jump                                  | All           |
-| Ctrl+Left / Ctrl+Right               | Word jump                                  | All           |
+| Alt+Up / Alt+Down                    | History prev / next                        | All           |
+| Ctrl+P / Ctrl+N                      | History prev / next                        | All           |
+| PageUp / PageDown                    | History prev / next                        | All           |
+| Ctrl+Left / Ctrl+Right               | Line start / end                           | All           |
+| Ctrl+Up / Ctrl+Down                  | Buffer start / end                         | All           |
 | Option+Left / Option+Right (ESC+b/f) | Word jump                                  | All (macOS)   |
 | Cmd+Left / Cmd+Right                 | Line start / end                           | Kitty (macOS) |
 | Ctrl+A / Ctrl+E                      | Line start / end                           | All           |
@@ -143,6 +149,35 @@ await readMultiline({ disabledKeys: ["ctrl+enter", "cmd+enter", "alt+enter"] });
 ```
 
 Valid values: `"shift+enter"`, `"ctrl+enter"`, `"cmd+enter"`, `"alt+enter"`, `"ctrl+j"`
+
+### History
+
+Pass an array for in-memory history, or a `HistoryOptions` object for file-based persistence:
+
+```typescript
+// In-memory history
+await readMultiline({ history: ["previous input"] });
+
+// File-based persistent history
+await readMultiline({
+  history: { filePath: "~/.myapp/history.json", maxEntries: 50 },
+});
+```
+
+| Option       | Type     | Default    | Description                    |
+| ------------ | -------- | ---------- | ------------------------------ |
+| `filePath`   | `string` | (required) | JSON file path for persistence |
+| `maxEntries` | `number` | `100`      | Maximum entries to keep        |
+
+The file is loaded synchronously at startup and saved asynchronously after each submit (errors are silently ignored). The parent directory is created automatically if it doesn't exist.
+
+#### `historyArrowNavigation`
+
+Controls how Up/Down arrow keys interact with history at boundaries:
+
+- `"single"` (default): at boundary, one press navigates history
+- `"double"`: at boundary, two consecutive presses navigate history
+- `"disabled"`: Up/Down never triggers history — use dedicated keys (Alt+Up/Down, Ctrl+P/N, PageUp/PageDown) instead
 
 ### Validation
 
