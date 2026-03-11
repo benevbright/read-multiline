@@ -1,3 +1,7 @@
+import type { styleText } from "node:util";
+
+type StyleTextFormat = Parameters<typeof styleText>[0];
+
 /** Error thrown when the user cancels input with Ctrl+C (when no onCancel callback is provided). */
 export class CancelError extends Error {
   constructor() {
@@ -76,8 +80,50 @@ export interface ReadMultilineOptions {
    */
   disabledKeys?: ModifiedEnterKey[];
 
-  /** Fixed footer text displayed below the editor (e.g. help text). Appears below the status line. */
+  /** Fixed footer text displayed below the editor. Appears below the status line. */
   footer?: string;
+
+  /**
+   * Auto-generated help footer showing key bindings.
+   * Displayed below the custom footer (if any), after kitty protocol detection completes.
+   * - true: show with default options
+   * - object: customize display (maxKeysPerAction, maxLines, style, keyStyle)
+   *
+   * Terminal width (columns) is auto-calculated from the output stream.
+   * submitOnEnter and disabledKeys are inherited from the parent options.
+   */
+  helpFooter?: boolean | HelpFooterDisplayOptions;
+}
+
+/** Built-in action names available for the help footer items configuration. */
+export type HelpFooterAction =
+  | "submit"
+  | "newline"
+  | "undo"
+  | "redo"
+  | "cancel"
+  | "eof"
+  | "history"
+  | "word-jump"
+  | "line-start"
+  | "line-end"
+  | "delete-word"
+  | "delete-to-start"
+  | "delete-to-end"
+  | "clear-screen";
+
+/** Display options for the auto-generated help footer showing key bindings. */
+export interface HelpFooterDisplayOptions {
+  /** Actions to display and their order (default: ["submit", "newline", "undo", "cancel", "eof"]) */
+  items?: HelpFooterAction[];
+  /** Maximum number of key alternatives shown per action (default: 2) */
+  maxKeysPerAction?: number;
+  /** Maximum number of lines to display (default: unlimited) */
+  maxLines?: number;
+  /** Overall text style applied via `node:util` styleText (default: "dim") */
+  style?: StyleTextFormat;
+  /** Style for key labels like "Enter", "Ctrl+Z" (default: none) */
+  keyStyle?: StyleTextFormat;
 }
 
 /** Key combinations that can be used as modified Enter keys. These can be disabled via the disabledKeys option. */
@@ -124,6 +170,7 @@ export interface EditorState {
 
   // Footer
   footerText: string;
+  rebuildFooter: ((columns: number) => string) | null;
 
   // History
   history: string[];

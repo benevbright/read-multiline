@@ -1,4 +1,3 @@
-import { styleText } from "node:util";
 import { CancelError, EOFError, readMultiline } from "./src/index.js";
 
 console.log("Multi-line input test\n");
@@ -14,10 +13,7 @@ while (true) {
       maxLines: 100,
       maxLength: 500,
       validate: (v) => (v.trim().length === 0 ? "Input cannot be empty" : undefined),
-      footer: styleText(
-        "dim",
-        "Enter: submit | Shift+Enter: newline | Ctrl+Z: undo | Ctrl+C: cancel | Ctrl+D: EOF",
-      ),
+      helpFooter: true,
     });
 
     console.log("");
