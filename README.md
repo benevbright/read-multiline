@@ -157,7 +157,7 @@ await readMultiline({ helpFooter: true });
 // Customized help footer
 await readMultiline({
   helpFooter: {
-    items: ["submit", "newline", "undo"], // Choose actions and order (default: all)
+    items: ["submit", "newline", "undo"], // Choose actions and order (default: ["submit", "newline", "undo", "cancel", "eof"])
     maxKeysPerAction: 3, // Show up to 3 key alternatives per action (default: 2)
     maxLines: 1, // Limit to 1 line (default: unlimited)
     style: "dim", // Overall style (default: "dim")

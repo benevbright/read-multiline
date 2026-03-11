@@ -141,7 +141,10 @@ function readFromTTY(
       ttyOutput.on("resize", resizeHandler);
     }
 
+    let active = true;
+
     function cleanup() {
+      active = false;
       if (state.escTimer) {
         clearTimeout(state.escTimer);
         state.escTimer = null;
@@ -254,6 +257,7 @@ function readFromTTY(
 
       const ttyOut = output as NodeJS.WriteStream;
       detectKittyProtocol(input, output).then(() => {
+        if (!active) return;
         const columns = ("columns" in ttyOut && ttyOut.columns) || 80;
         state.rebuildFooter = buildFooterForColumns;
         setFooter(state, buildFooterForColumns(columns));
