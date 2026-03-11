@@ -91,7 +91,7 @@ function readFromTTY(
     const historyEntries = Array.isArray(historyOption)
       ? historyOption
       : historyConfig?.filePath
-        ? loadHistory(historyConfig.filePath)
+        ? loadHistory(historyConfig.filePath, historyConfig.maxEntries ?? 100)
         : [];
 
     const state: EditorState = {

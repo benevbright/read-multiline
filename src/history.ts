@@ -11,11 +11,17 @@ function expandHome(filePath: string): string {
 }
 
 /** Load history entries from a JSON file. Returns [] if file doesn't exist or is invalid. */
-export function loadHistory(filePath: string): string[] {
+export function loadHistory(filePath: string, maxEntries?: number): string[] {
   try {
     const data = readFileSync(expandHome(filePath), "utf8");
     const parsed = JSON.parse(data);
-    return Array.isArray(parsed) ? parsed.filter((e): e is string => typeof e === "string") : [];
+    const entries = Array.isArray(parsed)
+      ? parsed.filter((e): e is string => typeof e === "string")
+      : [];
+    if (maxEntries != null && maxEntries > 0 && entries.length > maxEntries) {
+      return entries.slice(-maxEntries);
+    }
+    return entries;
   } catch {
     return [];
   }

@@ -199,7 +199,10 @@ export function processInput(state: EditorState, seq: string): void {
   }
 
   // Ignore unknown escape sequences
-  if (seq.startsWith("\x1b")) return;
+  if (seq.startsWith("\x1b")) {
+    if (state.historyArrowAttempt > 0) state.historyArrowAttempt = 0;
+    return;
+  }
 
   // Regular characters
   if (state.historyArrowAttempt > 0) state.historyArrowAttempt = 0;
