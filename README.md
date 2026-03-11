@@ -72,6 +72,8 @@ try {
 | `validateDebounceMs` | `number`                                         | `300`            | Debounce interval for live validation                |
 | `submitOnEnter`      | `boolean`                                        | `true`           | `true`: Enter=submit, `false`: Enter=newline         |
 | `disabledKeys`       | `ModifiedEnterKey[]`                             | `[]`             | Key combos to disable                                |
+| `footer`             | `string`                                         | `undefined`      | Fixed footer text below the editor                   |
+| `helpFooter`         | `boolean \| HelpFooterDisplayOptions`            | `true`           | Auto-generated key bindings help footer              |
 
 ### Key Bindings
 
@@ -143,6 +145,34 @@ await readMultiline({ disabledKeys: ["ctrl+enter", "cmd+enter", "alt+enter"] });
 ```
 
 Valid values: `"shift+enter"`, `"ctrl+enter"`, `"cmd+enter"`, `"alt+enter"`, `"ctrl+j"`
+
+### Footer
+
+Use `footer` for custom text, `helpFooter` for auto-generated key bindings help:
+
+```typescript
+// Auto-generated help footer (detects terminal capabilities)
+await readMultiline({ helpFooter: true });
+
+// Customized help footer
+await readMultiline({
+  helpFooter: {
+    items: ["submit", "newline", "undo"], // Choose actions and order (default: ["submit", "newline", "undo", "cancel", "eof"])
+    maxKeysPerAction: 3, // Show up to 3 key alternatives per action (default: 2)
+    maxLines: 1, // Limit to 1 line (default: unlimited)
+    style: "dim", // Overall style (default: "dim")
+    keyStyle: "bold", // Style for key labels
+  },
+});
+
+// Custom footer + help footer together
+await readMultiline({
+  footer: "Type your message below",
+  helpFooter: true,
+});
+```
+
+`helpFooter` automatically detects [kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) support and only shows keys available in the current terminal. The `submitOnEnter` and `disabledKeys` options are inherited, and terminal width is auto-calculated.
 
 ### Validation
 

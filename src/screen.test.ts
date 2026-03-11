@@ -89,6 +89,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("hello");
@@ -105,6 +106,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       linePrompt: "  ",
     });
@@ -125,6 +127,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       linePrompt: "  ",
     });
@@ -150,6 +153,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("abc");
@@ -168,6 +172,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       linePrompt: "  ",
     });
@@ -190,6 +195,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       linePrompt: "  ",
     });
@@ -219,6 +225,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("ac");
@@ -240,6 +247,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("abc");
@@ -257,6 +265,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("abcd");
@@ -275,6 +284,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       linePrompt: "  ",
     });
@@ -301,6 +311,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("hello world");
@@ -321,6 +332,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("\u3042\u3044"); // あい (each 2 cols)
@@ -338,6 +350,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("\u3042\u3044\u3046"); // あいう
@@ -360,6 +373,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("a\u3042b"); // a + あ(2cols) + b
@@ -379,6 +393,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("\u3042\u3046"); // あう
@@ -398,6 +413,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("a\u3042b\u3044c"); // a(1) + あ(2) + b(1) + い(2) + c(1) = 7 cols
@@ -421,6 +437,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       linePrompt: "  ",
     });
@@ -445,6 +462,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("hello world");
@@ -464,6 +482,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("hello");
@@ -485,6 +504,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       linePrompt: "  ",
     });
@@ -509,6 +529,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       linePrompt: "  ",
     });
@@ -530,6 +551,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "input>>> ",
     });
     input.send("x");
@@ -547,6 +569,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
     });
     input.send("abc");
     await flush(vt.term);
@@ -564,6 +587,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("abcd");
@@ -583,6 +607,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       linePrompt: "  ",
     });
@@ -608,6 +633,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("hello world");
@@ -630,6 +656,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("hello world");
@@ -654,6 +681,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       initialValue: "hello",
     });
@@ -670,6 +698,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       linePrompt: "  ",
       initialValue: "line1\nline2",
@@ -690,6 +719,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       history: ["old entry"],
     });
@@ -718,6 +748,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       linePrompt: "  ",
     });
@@ -745,6 +776,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
     });
     input.send("hello");
@@ -768,6 +800,7 @@ describe("Screen rendering (virtual terminal)", () => {
     const promise = readMultiline({
       input,
       output: vt.stream,
+      helpFooter: false,
       prompt: "> ",
       linePrompt: "  ",
     });

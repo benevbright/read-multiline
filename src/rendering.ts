@@ -67,9 +67,12 @@ function drawBelowEditor(state: EditorState): void {
   }
 
   if (state.footerText) {
-    w(state, "\r\n");
-    linesBelow++;
-    w(state, state.footerText + "\x1b[K");
+    const footerLines = state.footerText.split("\n");
+    for (const line of footerLines) {
+      w(state, "\r\n");
+      linesBelow++;
+      w(state, line + "\x1b[K");
+    }
   }
 
   const upCount = endRow - state.row + linesBelow;
@@ -106,12 +109,20 @@ export function setStatus(state: EditorState, text: string, color: "red" | "gree
   drawBelowEditor(state);
 }
 
+/** Set footer text and redraw the area below the editor */
+export function setFooter(state: EditorState, text: string): void {
+  if (state.statusText || state.footerText) clearBelowAndReturn(state);
+  state.footerText = text;
+  drawBelowEditor(state);
+}
+
 /** Clear all content below the editor (status and footer) for cleanup */
 export function clearBelowEditor(state: EditorState): void {
   if (!state.statusText && !state.footerText) return;
   clearBelowAndReturn(state);
   state.statusText = "";
   state.statusColor = "";
+  state.footerText = "";
 }
 
 /** Redraw all lines from fromRow onwards, placing cursor at (targetRow, targetCol) */
