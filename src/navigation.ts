@@ -1,5 +1,5 @@
 import { charAtIndex, charBeforeIndex, charWidth, isWordChar } from "./chars.js";
-import { beginBatch, flushBatch, moveTo, pW, tCol, w } from "./rendering.js";
+import { beginBatch, drawBelowEditor, flushBatch, moveTo, pW, tCol, w } from "./rendering.js";
 import type { EditorState } from "./types.js";
 
 // --- Basic cursor movement ---
@@ -48,10 +48,22 @@ export function moveDown(state: EditorState): void {
 export function moveUpOrHistory(state: EditorState): void {
   if (state.row > 0) {
     moveUp(state);
+    state.historyArrowAttempt = 0;
   } else if (state.col > 0) {
     moveTo(state, 0, 0);
+    state.historyArrowAttempt = 0;
   } else if (state.history.length > 0) {
-    historyPrev(state);
+    const nav = state.historyArrowNavigation;
+    if (nav === "single") {
+      historyPrev(state);
+    } else if (nav === "double") {
+      state.historyArrowAttempt++;
+      if (state.historyArrowAttempt >= 2) {
+        state.historyArrowAttempt = 0;
+        historyPrev(state);
+      }
+    }
+    // "disabled": do nothing
   }
 }
 
@@ -59,10 +71,22 @@ export function moveUpOrHistory(state: EditorState): void {
 export function moveDownOrHistory(state: EditorState): void {
   if (state.row < state.lines.length - 1) {
     moveDown(state);
+    state.historyArrowAttempt = 0;
   } else if (state.col < state.lines[state.row].length) {
     moveTo(state, state.row, state.lines[state.row].length);
+    state.historyArrowAttempt = 0;
   } else if (state.historyIndex < state.history.length) {
-    historyNext(state);
+    const nav = state.historyArrowNavigation;
+    if (nav === "single") {
+      historyNext(state);
+    } else if (nav === "double") {
+      state.historyArrowAttempt++;
+      if (state.historyArrowAttempt >= 2) {
+        state.historyArrowAttempt = 0;
+        historyNext(state);
+      }
+    }
+    // "disabled": do nothing
   }
 }
 
@@ -152,8 +176,12 @@ export function bufferEnd(state: EditorState): void {
 
 // --- History ---
 
-/** Replace editor content and place cursor at end */
-export function loadContent(state: EditorState, content: string): void {
+/** Replace editor content and place cursor at the specified position */
+export function loadContent(
+  state: EditorState,
+  content: string,
+  cursor: "start" | "end" = "end",
+): void {
   beginBatch(state);
   const newLines = content.split("\n");
   if (state.row > 0) w(state, `\x1b[${state.row}A`);
@@ -166,9 +194,17 @@ export function loadContent(state: EditorState, content: string): void {
   for (let i = 1; i < state.lines.length; i++) {
     w(state, "\n" + state.linePrompt + state.lines[i]);
   }
-  state.row = state.lines.length - 1;
-  state.col = state.lines[state.row].length;
-  w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
+  if (cursor === "start") {
+    state.row = 0;
+    state.col = 0;
+    if (newLines.length > 1) w(state, `\x1b[${newLines.length - 1}A`);
+    w(state, `\x1b[${tCol(state, 0, 0)}G`);
+  } else {
+    state.row = state.lines.length - 1;
+    state.col = state.lines[state.row].length;
+    w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
+  }
+  drawBelowEditor(state);
   flushBatch(state);
 }
 
@@ -179,7 +215,7 @@ export function historyPrev(state: EditorState): void {
     state.draft = state.lines.join("\n");
   }
   state.historyIndex--;
-  loadContent(state, state.history[state.historyIndex]);
+  loadContent(state, state.history[state.historyIndex], "start");
 }
 
 /** Navigate to the next history entry, or restore draft at the end */

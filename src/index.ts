@@ -1,15 +1,17 @@
 import { stringWidth } from "./chars.js";
 import { handleDelete } from "./editing.js";
 import { buildHelpFooter, detectKittyProtocol } from "./footer.js";
+import { appendHistory, loadHistory, saveHistory } from "./history.js";
 import { buildKeyMap, onData } from "./input.js";
 import { clearBelowEditor, clearScreen, setFooter, setStatus, tCol, w } from "./rendering.js";
-import type { EditorState, ReadMultilineOptions, TTYInput } from "./types.js";
+import type { EditorState, HistoryOptions, ReadMultilineOptions, TTYInput } from "./types.js";
 import { CancelError, EOFError } from "./types.js";
 
 export { CancelError, EOFError } from "./types.js";
 export type {
   HelpFooterAction,
   HelpFooterDisplayOptions,
+  HistoryOptions,
   ModifiedEnterKey,
   ReadMultilineOptions,
   TTYInput,
@@ -81,7 +83,8 @@ function readFromTTY(
   return new Promise((resolve, reject) => {
     const {
       initialValue,
-      history: historyEntries,
+      history: historyOption,
+      historyArrowNavigation = "single",
       maxLines,
       maxLength,
       validate,
@@ -91,6 +94,14 @@ function readFromTTY(
       footer,
       helpFooter = true,
     } = options;
+
+    const historyConfig: HistoryOptions | undefined =
+      historyOption && !Array.isArray(historyOption) ? historyOption : undefined;
+    const historyEntries = Array.isArray(historyOption)
+      ? historyOption
+      : historyConfig?.filePath
+        ? loadHistory(historyConfig.filePath, historyConfig.maxEntries ?? 100)
+        : [];
 
     const state: EditorState = {
       lines: [""],
@@ -105,9 +116,11 @@ function readFromTTY(
       statusColor: "",
       footerText: footer ?? "",
       rebuildFooter: null,
-      history: historyEntries ? [...historyEntries] : [],
-      historyIndex: historyEntries ? historyEntries.length : 0,
+      history: [...historyEntries],
+      historyIndex: historyEntries.length,
       draft: initialValue ?? "",
+      historyArrowNavigation,
+      historyArrowAttempt: 0,
       undoStack: [],
       redoStack: [],
       lastEditType: "",
@@ -175,7 +188,13 @@ function readFromTTY(
       }
       cleanup();
       w(state, "\n");
-      resolve(state.lines.join("\n"));
+      const result = state.lines.join("\n");
+      if (historyConfig?.filePath) {
+        const maxEntries = historyConfig.maxEntries ?? 100;
+        const updated = appendHistory(state.history, result, maxEntries);
+        saveHistory(historyConfig.filePath, updated);
+      }
+      resolve(result);
     }
 
     function handleEOF() {

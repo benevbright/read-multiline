@@ -725,11 +725,11 @@ describe("Screen rendering (virtual terminal)", () => {
     });
     input.send("current");
     input.send(KEY.HOME); // move to col 0
-    input.send(KEY.UP); // -> "old entry"
+    input.send(KEY.UP); // -> "old entry" (cursor at start)
     await flush(vt.term);
 
     expect(screenLine(vt.term, 0)).toBe("> old entry");
-    expect(cursorPos(vt.term)).toEqual({ x: 11, y: 0 });
+    expect(cursorPos(vt.term)).toEqual({ x: 2, y: 0 });
 
     input.send(KEY.END); // move to end
     input.send(KEY.DOWN); // -> "current"

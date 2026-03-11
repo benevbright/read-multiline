@@ -34,8 +34,20 @@ export interface ReadMultilineOptions {
   /** Initial value to pre-populate the input */
   initialValue?: string;
 
-  /** History entries (oldest first). Up/Down at boundaries navigates history. */
-  history?: string[];
+  /**
+   * History entries (oldest first) or history options with file persistence.
+   * - `string[]`: in-memory history entries
+   * - `HistoryOptions`: file-based persistent history
+   */
+  history?: string[] | HistoryOptions;
+
+  /**
+   * How Up/Down arrow keys interact with history at boundaries (default: "single").
+   * - "single": at boundary, one press triggers history navigation
+   * - "double": at boundary, two consecutive presses trigger history navigation
+   * - "disabled": Up/Down never triggers history (use dedicated keys instead)
+   */
+  historyArrowNavigation?: "single" | "double" | "disabled";
 
   /** Maximum number of lines allowed */
   maxLines?: number;
@@ -117,6 +129,14 @@ export interface HelpFooterDisplayOptions {
 /** Key combinations that can be used as modified Enter keys. These can be disabled via the disabledKeys option. */
 export type ModifiedEnterKey = "shift+enter" | "ctrl+enter" | "cmd+enter" | "alt+enter" | "ctrl+j";
 
+/** Options for file-based persistent history */
+export interface HistoryOptions {
+  /** File path for persistent storage (JSON format) */
+  filePath: string;
+  /** Maximum number of entries to keep (default: 100) */
+  maxEntries?: number;
+}
+
 /** A readable stream with optional TTY capabilities for character-by-character raw mode input. */
 export interface TTYInput extends NodeJS.ReadableStream {
   isTTY?: boolean;
@@ -156,6 +176,8 @@ export interface EditorState {
   history: string[];
   historyIndex: number;
   draft: string;
+  historyArrowNavigation: "single" | "double" | "disabled";
+  historyArrowAttempt: number;
 
   // Undo/redo
   undoStack: Snapshot[];

@@ -13,13 +13,13 @@ import {
 import {
   bufferEnd,
   bufferStart,
+  historyNext,
+  historyPrev,
   lineEnd,
   lineStart,
-  moveDown,
   moveDownOrHistory,
   moveLeft,
   moveRight,
-  moveUp,
   moveUpOrHistory,
   wordLeft,
   wordRight,
@@ -101,17 +101,27 @@ export function buildKeyMap(
   keyMap["\x1b[C"] = () => moveRight(state);
   keyMap["\x1b[D"] = () => moveLeft(state);
 
-  // Alt+Arrow (word jump)
+  // Alt+Arrow
   keyMap["\x1b[1;3C"] = () => wordRight(state);
   keyMap["\x1b[1;3D"] = () => wordLeft(state);
-  keyMap["\x1b[1;3A"] = () => moveUp(state);
-  keyMap["\x1b[1;3B"] = () => moveDown(state);
+  keyMap["\x1b[1;3A"] = () => historyPrev(state);
+  keyMap["\x1b[1;3B"] = () => historyNext(state);
 
-  // Ctrl+Arrow (word jump)
-  keyMap["\x1b[1;5C"] = () => wordRight(state);
-  keyMap["\x1b[1;5D"] = () => wordLeft(state);
-  keyMap["\x1b[1;5A"] = () => moveUp(state);
-  keyMap["\x1b[1;5B"] = () => moveDown(state);
+  // Ctrl+Arrow (line/buffer navigation)
+  keyMap["\x1b[1;5C"] = () => lineEnd(state);
+  keyMap["\x1b[1;5D"] = () => lineStart(state);
+  keyMap["\x1b[1;5A"] = () => bufferStart(state);
+  keyMap["\x1b[1;5B"] = () => bufferEnd(state);
+
+  // Ctrl+P/N (history navigation)
+  keyMap["\x10"] = () => historyPrev(state); // Ctrl+P
+  keyMap["\x1b[112;5u"] = () => historyPrev(state); // kitty Ctrl+P
+  keyMap["\x0e"] = () => historyNext(state); // Ctrl+N
+  keyMap["\x1b[110;5u"] = () => historyNext(state); // kitty Ctrl+N
+
+  // PageUp/PageDown (history navigation)
+  keyMap["\x1b[5~"] = () => historyPrev(state); // PageUp
+  keyMap["\x1b[6~"] = () => historyNext(state); // PageDown
 
   // macOS Option+Arrow
   keyMap["\x1bb"] = () => wordLeft(state); // ESC+b
@@ -155,6 +165,7 @@ export function processInput(state: EditorState, seq: string): void {
     if (startIdx > 0) processInput(state, seq.slice(0, startIdx));
     saveUndo(state);
     state.isPasting = true;
+    if (state.historyArrowAttempt > 0) state.historyArrowAttempt = 0;
     const after = seq.slice(startIdx + PASTE_START.length);
     if (after) processInput(state, after);
     return;
@@ -179,14 +190,23 @@ export function processInput(state: EditorState, seq: string): void {
   // Normal key processing
   const handler = state.keyMap[seq];
   if (handler) {
+    const prevAttempt = state.historyArrowAttempt;
     handler();
+    // Reset double-press counter if the handler didn't touch it
+    if (state.historyArrowAttempt === prevAttempt && prevAttempt > 0) {
+      state.historyArrowAttempt = 0;
+    }
     return;
   }
 
   // Ignore unknown escape sequences
-  if (seq.startsWith("\x1b")) return;
+  if (seq.startsWith("\x1b")) {
+    if (state.historyArrowAttempt > 0) state.historyArrowAttempt = 0;
+    return;
+  }
 
   // Regular characters
+  if (state.historyArrowAttempt > 0) state.historyArrowAttempt = 0;
   for (const ch of seq) {
     if (ch.charCodeAt(0) >= 32) insertChar(state, ch);
   }
@@ -198,7 +218,13 @@ function flushEscBuffer(state: EditorState): void {
   state.escBuffer = "";
   const handler = state.keyMap[buf];
   if (handler) {
+    const prevAttempt = state.historyArrowAttempt;
     handler();
+    if (state.historyArrowAttempt === prevAttempt && prevAttempt > 0) {
+      state.historyArrowAttempt = 0;
+    }
+  } else if (state.historyArrowAttempt > 0) {
+    state.historyArrowAttempt = 0;
   }
 }
 
