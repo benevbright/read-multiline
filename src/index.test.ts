@@ -63,6 +63,12 @@ const KEY = {
   CMD_RIGHT: "\x1b[1;9C",
   CMD_UP: "\x1b[1;9A",
   CMD_DOWN: "\x1b[1;9B",
+  CTRL_UP: "\x1b[1;5A",
+  CTRL_DOWN: "\x1b[1;5B",
+  CTRL_P: "\x10",
+  CTRL_N: "\x0e",
+  PAGE_UP: "\x1b[5~",
+  PAGE_DOWN: "\x1b[6~",
   HOME: "\x1b[H",
   END: "\x1b[F",
 };
@@ -1172,6 +1178,121 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.UP); // -> "line1\nline2"
     input.send(KEY.ENTER);
     expect(await promise).toBe("line1\nline2");
+  });
+
+  // --- historyArrowNavigation: "double" ---
+
+  it("double mode: requires two Up presses at boundary to navigate history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["old"],
+      historyArrowNavigation: "double",
+    });
+    input.send(KEY.UP); // first press: no-op
+    input.send("X"); // typing resets the counter
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("X");
+  });
+
+  it("double mode: two consecutive Up presses at boundary navigates history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["old"],
+      historyArrowNavigation: "double",
+    });
+    input.send(KEY.UP); // first press
+    input.send(KEY.UP); // second press -> history
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("old");
+  });
+
+  // --- historyArrowNavigation: "disabled" ---
+
+  it("disabled mode: Up/Down never triggers history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["old"],
+      historyArrowNavigation: "disabled",
+    });
+    input.send(KEY.UP); // no-op (disabled)
+    input.send(KEY.UP); // still no-op
+    input.send("new");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("new");
+  });
+
+  it("disabled mode: dedicated keys still navigate history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["old"],
+      historyArrowNavigation: "disabled",
+    });
+    input.send(KEY.ALT_UP); // dedicated key still works
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("old");
+  });
+
+  // --- Dedicated history keys ---
+
+  it("Ctrl+P/N navigates history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["first", "second"],
+    });
+    input.send(KEY.CTRL_P); // -> "second" (cursor at start)
+    input.send(KEY.CTRL_P); // -> "first" (cursor at start)
+    input.send(KEY.CTRL_N); // -> "second"
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("second");
+  });
+
+  it("PageUp/PageDown navigates history", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+      history: ["first", "second"],
+    });
+    input.send(KEY.PAGE_UP); // -> "second" (cursor at start)
+    input.send(KEY.PAGE_UP); // -> "first" (cursor at start)
+    input.send(KEY.PAGE_DOWN); // -> "second"
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("second");
+  });
+
+  // --- Ctrl+Up/Down for buffer navigation ---
+
+  it("Ctrl+Up moves to buffer start", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+    });
+    input.send("line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("line2");
+    input.send(KEY.CTRL_UP); // -> buffer start (row 0, col 0)
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("Xline1\nline2");
+  });
+
+  it("Ctrl+Down moves to buffer end", async () => {
+    const promise = readMultiline({
+      input,
+      output: output.stream,
+    });
+    input.send("line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("line2");
+    input.send(KEY.CTRL_UP); // -> buffer start
+    input.send(KEY.CTRL_DOWN); // -> buffer end
+    input.send("X");
+    input.send(KEY.ENTER);
+    expect(await promise).toBe("line1\nline2X");
   });
 
   // --- Validation ---

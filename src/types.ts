@@ -87,7 +87,7 @@ export type ModifiedEnterKey = "shift+enter" | "ctrl+enter" | "cmd+enter" | "alt
 export interface HistoryOptions {
   /** File path for persistent storage (JSON format) */
   filePath: string;
-  /** Maximum number of entries to keep (default: unlimited) */
+  /** Maximum number of entries to keep (default: 100) */
   maxEntries?: number;
 }
 

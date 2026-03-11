@@ -189,7 +189,12 @@ export function processInput(state: EditorState, seq: string): void {
   // Normal key processing
   const handler = state.keyMap[seq];
   if (handler) {
+    const prevAttempt = state.historyArrowAttempt;
     handler();
+    // Reset double-press counter if the handler didn't touch it
+    if (state.historyArrowAttempt === prevAttempt && prevAttempt > 0) {
+      state.historyArrowAttempt = 0;
+    }
     return;
   }
 
@@ -197,6 +202,7 @@ export function processInput(state: EditorState, seq: string): void {
   if (seq.startsWith("\x1b")) return;
 
   // Regular characters
+  if (state.historyArrowAttempt > 0) state.historyArrowAttempt = 0;
   for (const ch of seq) {
     if (ch.charCodeAt(0) >= 32) insertChar(state, ch);
   }
