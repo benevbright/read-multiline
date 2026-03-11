@@ -73,7 +73,7 @@ try {
 | `submitOnEnter`      | `boolean`                                        | `true`           | `true`: Enter=submit, `false`: Enter=newline         |
 | `disabledKeys`       | `ModifiedEnterKey[]`                             | `[]`             | Key combos to disable                                |
 | `footer`             | `string`                                         | `undefined`      | Fixed footer text below the editor                   |
-| `helpFooter`         | `boolean \| HelpFooterDisplayOptions`            | `undefined`      | Auto-generated key bindings help footer              |
+| `helpFooter`         | `boolean \| HelpFooterDisplayOptions`            | `true`           | Auto-generated key bindings help footer              |
 
 ### Key Bindings
 
@@ -157,6 +157,7 @@ await readMultiline({ helpFooter: true });
 // Customized help footer
 await readMultiline({
   helpFooter: {
+    items: ["submit", "newline", "undo"], // Choose actions and order (default: all)
     maxKeysPerAction: 3, // Show up to 3 key alternatives per action (default: 2)
     maxLines: 1, // Limit to 1 line (default: unlimited)
     style: "dim", // Overall style (default: "dim")

@@ -83,8 +83,27 @@ export interface ReadMultilineOptions {
   helpFooter?: boolean | HelpFooterDisplayOptions;
 }
 
+/** Built-in action names available for the help footer items configuration. */
+export type HelpFooterAction =
+  | "submit"
+  | "newline"
+  | "undo"
+  | "redo"
+  | "cancel"
+  | "eof"
+  | "history"
+  | "word-jump"
+  | "line-start"
+  | "line-end"
+  | "delete-word"
+  | "delete-to-start"
+  | "delete-to-end"
+  | "clear-screen";
+
 /** Display options for the auto-generated help footer showing key bindings. */
 export interface HelpFooterDisplayOptions {
+  /** Actions to display and their order (default: ["submit", "newline", "undo", "cancel", "eof"]) */
+  items?: HelpFooterAction[];
   /** Maximum number of key alternatives shown per action (default: 2) */
   maxKeysPerAction?: number;
   /** Maximum number of lines to display (default: unlimited) */
@@ -131,6 +150,7 @@ export interface EditorState {
 
   // Footer
   footerText: string;
+  rebuildFooter: ((columns: number) => string) | null;
 
   // History
   history: string[];

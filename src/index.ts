@@ -8,6 +8,7 @@ import { CancelError, EOFError } from "./types.js";
 
 export { CancelError, EOFError } from "./types.js";
 export type {
+  HelpFooterAction,
   HelpFooterDisplayOptions,
   ModifiedEnterKey,
   ReadMultilineOptions,
@@ -88,7 +89,7 @@ function readFromTTY(
       submitOnEnter = true,
       disabledKeys = [],
       footer,
-      helpFooter,
+      helpFooter = true,
     } = options;
 
     const state: EditorState = {
@@ -103,6 +104,7 @@ function readFromTTY(
       statusText: "",
       statusColor: "",
       footerText: footer ?? "",
+      rebuildFooter: null,
       history: historyEntries ? [...historyEntries] : [],
       historyIndex: historyEntries ? historyEntries.length : 0,
       draft: initialValue ?? "",
@@ -131,6 +133,9 @@ function readFromTTY(
     const ttyOutput = output as NodeJS.WriteStream;
     if (typeof ttyOutput.on === "function" && "columns" in ttyOutput) {
       resizeHandler = () => {
+        if (state.rebuildFooter) {
+          state.footerText = state.rebuildFooter(ttyOutput.columns);
+        }
         clearScreen(state);
       };
       ttyOutput.on("resize", resizeHandler);
@@ -233,18 +238,23 @@ function readFromTTY(
     // Must run after raw mode is enabled so the terminal can respond to the query
     if (helpFooter) {
       const helpOpts = typeof helpFooter === "object" ? helpFooter : {};
-      const ttyOutput = output as NodeJS.WriteStream;
-      const columns = ("columns" in ttyOutput && ttyOutput.columns) || 80;
+      const customFooter = footer ?? "";
 
-      detectKittyProtocol(input, output).then(() => {
+      const buildFooterForColumns = (cols: number): string => {
         const helpText = buildHelpFooter({
           ...helpOpts,
           submitOnEnter,
           disabledKeys,
-          columns,
+          columns: cols,
         });
-        const combined = state.footerText ? state.footerText + "\n" + helpText : helpText;
-        setFooter(state, combined);
+        return customFooter ? customFooter + "\n" + helpText : helpText;
+      };
+
+      const ttyOut = output as NodeJS.WriteStream;
+      detectKittyProtocol(input, output).then(() => {
+        const columns = ("columns" in ttyOut && ttyOut.columns) || 80;
+        state.rebuildFooter = buildFooterForColumns;
+        setFooter(state, buildFooterForColumns(columns));
       });
     }
 

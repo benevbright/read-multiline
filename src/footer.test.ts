@@ -180,4 +180,86 @@ describe("buildHelpFooter", () => {
       expect(footer).toContain("Shift+Enter/Ctrl+J: newline");
     });
   });
+
+  describe("items option", () => {
+    it("shows only specified actions in order", () => {
+      const footer = buildHelpFooter({ items: ["undo", "submit"], columns: 200 });
+      expect(footer).toContain("Ctrl+Z: undo");
+      expect(footer).toContain("Enter: submit");
+      expect(footer).not.toContain("newline");
+      expect(footer).not.toContain("cancel");
+      expect(footer).not.toContain("EOF");
+      const undoIdx = footer.indexOf("undo");
+      const submitIdx = footer.indexOf("submit");
+      expect(undoIdx).toBeLessThan(submitIdx);
+    });
+
+    it("shows only submit when items is ['submit']", () => {
+      const footer = buildHelpFooter({ items: ["submit"], columns: 200 });
+      expect(footer).toContain("Enter: submit");
+      expect(footer).not.toContain("newline");
+      expect(footer).not.toContain("undo");
+    });
+
+    it("respects submitOnEnter with custom items order", () => {
+      const footer = buildHelpFooter({
+        items: ["newline", "submit"],
+        submitOnEnter: false,
+        columns: 200,
+      });
+      expect(footer).toContain("Enter: newline");
+      expect(footer).toContain("submit");
+      const newlineIdx = footer.indexOf("newline");
+      const submitIdx = footer.indexOf("submit");
+      expect(newlineIdx).toBeLessThan(submitIdx);
+    });
+
+    it("returns empty string when items is empty", () => {
+      const footer = buildHelpFooter({ items: [], columns: 200 });
+      expect(footer).toBe("");
+    });
+
+    it("uses default items when not specified", () => {
+      const footer = buildHelpFooter({ columns: 200 });
+      expect(footer).toContain("submit");
+      expect(footer).toContain("newline");
+      expect(footer).toContain("undo");
+      expect(footer).toContain("cancel");
+      expect(footer).toContain("EOF");
+    });
+
+    it("supports all non-default actions", () => {
+      const footer = buildHelpFooter({
+        items: [
+          "redo",
+          "history",
+          "word-jump",
+          "line-start",
+          "line-end",
+          "delete-word",
+          "delete-to-start",
+          "delete-to-end",
+          "clear-screen",
+        ],
+        columns: 200,
+      });
+      expect(footer).toContain("Ctrl+Y: redo");
+      expect(footer).toContain("↑/↓: history");
+      expect(footer).toContain("Alt+←/→: word jump");
+      expect(footer).toContain("Ctrl+A/Home: line start");
+      expect(footer).toContain("Ctrl+E/End: line end");
+      expect(footer).toContain("Ctrl+W: delete word");
+      expect(footer).toContain("Ctrl+U: delete to start");
+      expect(footer).toContain("Ctrl+K: delete to end");
+      expect(footer).toContain("Ctrl+L: clear screen");
+    });
+
+    it("does not show non-default actions by default", () => {
+      const footer = buildHelpFooter({ columns: 200 });
+      expect(footer).not.toContain("redo");
+      expect(footer).not.toContain("history");
+      expect(footer).not.toContain("word jump");
+      expect(footer).not.toContain("clear screen");
+    });
+  });
 });

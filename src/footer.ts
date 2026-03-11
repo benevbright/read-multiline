@@ -1,14 +1,18 @@
 import { styleText } from "node:util";
 import { stringWidth } from "./chars.js";
-import type { ModifiedEnterKey, TTYInput } from "./types.js";
+import type { HelpFooterAction, ModifiedEnterKey, TTYInput } from "./types.js";
 
 type StyleTextFormat = Parameters<typeof styleText>[0];
+
+const DEFAULT_ITEMS: HelpFooterAction[] = ["submit", "newline", "undo", "cancel", "eof"];
 
 interface HelpFooterOptions {
   /** Whether Enter submits the input (default: true) */
   submitOnEnter?: boolean;
   /** Key combinations that are disabled */
   disabledKeys?: ModifiedEnterKey[];
+  /** Actions to display and their order (default: ["submit", "newline", "undo", "cancel", "eof"]) */
+  items?: HelpFooterAction[];
   /** Maximum number of key alternatives shown per action (default: 2) */
   maxKeysPerAction?: number;
   /** Maximum number of lines to display (default: unlimited) */
@@ -126,27 +130,64 @@ function getAvailableModifiedKeys(disabledKeys: Set<ModifiedEnterKey>): Modified
   });
 }
 
+function resolveAction(
+  action: HelpFooterAction,
+  submitOnEnter: boolean,
+  modifiedLabels: string[],
+): HelpItem | null {
+  switch (action) {
+    case "submit":
+      if (submitOnEnter) return { keys: ["Enter"], action: "submit" };
+      return modifiedLabels.length > 0 ? { keys: modifiedLabels, action: "submit" } : null;
+    case "newline":
+      if (!submitOnEnter) return { keys: ["Enter"], action: "newline" };
+      return modifiedLabels.length > 0 ? { keys: modifiedLabels, action: "newline" } : null;
+    case "undo":
+      return { keys: ["Ctrl+Z"], action: "undo" };
+    case "redo":
+      return { keys: ["Ctrl+Y"], action: "redo" };
+    case "cancel":
+      return { keys: ["Ctrl+C"], action: "cancel" };
+    case "eof":
+      return { keys: ["Ctrl+D"], action: "EOF" };
+    case "history":
+      return { keys: ["↑/↓"], action: "history" };
+    case "word-jump":
+      return { keys: ["Alt+←/→"], action: "word jump" };
+    case "line-start":
+      return { keys: ["Ctrl+A", "Home"], action: "line start" };
+    case "line-end":
+      return { keys: ["Ctrl+E", "End"], action: "line end" };
+    case "delete-word":
+      return { keys: ["Ctrl+W"], action: "delete word" };
+    case "delete-to-start":
+      return { keys: ["Ctrl+U"], action: "delete to start" };
+    case "delete-to-end":
+      return { keys: ["Ctrl+K"], action: "delete to end" };
+    case "clear-screen":
+      return { keys: ["Ctrl+L"], action: "clear screen" };
+  }
+}
+
 function buildItems(options: HelpFooterOptions): HelpItem[] {
-  const { submitOnEnter = true, disabledKeys = [], maxKeysPerAction = 2 } = options;
+  const {
+    submitOnEnter = true,
+    disabledKeys = [],
+    maxKeysPerAction = 2,
+    items: actions = DEFAULT_ITEMS,
+  } = options;
   const disabled = new Set(disabledKeys);
-  const items: HelpItem[] = [];
 
   const available = getAvailableModifiedKeys(disabled);
   const modifiedLabels = available
     .slice(0, Math.max(1, maxKeysPerAction))
     .map((k) => MODIFIED_KEY_LABELS[k]);
 
-  if (submitOnEnter) {
-    items.push({ keys: ["Enter"], action: "submit" });
-    if (modifiedLabels.length > 0) items.push({ keys: modifiedLabels, action: "newline" });
-  } else {
-    if (modifiedLabels.length > 0) items.push({ keys: modifiedLabels, action: "submit" });
-    items.push({ keys: ["Enter"], action: "newline" });
+  const items: HelpItem[] = [];
+  for (const action of actions) {
+    const item = resolveAction(action, submitOnEnter, modifiedLabels);
+    if (item) items.push(item);
   }
-
-  items.push({ keys: ["Ctrl+Z"], action: "undo" });
-  items.push({ keys: ["Ctrl+C"], action: "cancel" });
-  items.push({ keys: ["Ctrl+D"], action: "EOF" });
 
   return items;
 }
@@ -170,7 +211,9 @@ function formatGrid(
   const maxItemWidth = Math.max(...itemWidths);
 
   const colWidth = maxItemWidth + 2;
-  const numCols = Math.max(1, Math.floor(termWidth / colWidth));
+  // Ensure each row fits within termWidth: last item has no padding, others have colWidth
+  // Row width = (numCols - 1) * colWidth + maxItemWidth <= termWidth
+  const numCols = Math.max(1, Math.floor((termWidth - maxItemWidth) / colWidth) + 1);
 
   const rows: string[] = [];
   for (let i = 0; i < items.length; i += numCols) {
