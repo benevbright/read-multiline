@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 
 /** Expand leading ~ to the user's home directory */
 function expandHome(filePath: string): string {
-  if (filePath.startsWith("~/") || filePath === "~") {
+  if (filePath === "~" || filePath.startsWith("~/") || filePath.startsWith("~\\")) {
     return filePath.replace("~", homedir());
   }
   return filePath;
@@ -28,14 +28,16 @@ export function loadHistory(filePath: string, maxEntries?: number): string[] {
 }
 
 /** Save history entries to a JSON file asynchronously. Errors are silently ignored. */
-export function saveHistory(filePath: string, entries: string[]): void {
+export async function saveHistory(filePath: string, entries: string[]): Promise<void> {
   const resolved = expandHome(filePath);
   try {
     mkdirSync(dirname(resolved), { recursive: true });
   } catch {
     // ignore
   }
-  writeFile(resolved, JSON.stringify(entries), () => {});
+  await new Promise<void>((resolve) => {
+    writeFile(resolved, JSON.stringify(entries), () => resolve());
+  });
 }
 
 /** Append an entry to the history array and apply maxEntries limit. Returns a new array. */

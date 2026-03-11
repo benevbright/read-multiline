@@ -165,6 +165,7 @@ export function processInput(state: EditorState, seq: string): void {
     if (startIdx > 0) processInput(state, seq.slice(0, startIdx));
     saveUndo(state);
     state.isPasting = true;
+    if (state.historyArrowAttempt > 0) state.historyArrowAttempt = 0;
     const after = seq.slice(startIdx + PASTE_START.length);
     if (after) processInput(state, after);
     return;
@@ -217,7 +218,13 @@ function flushEscBuffer(state: EditorState): void {
   state.escBuffer = "";
   const handler = state.keyMap[buf];
   if (handler) {
+    const prevAttempt = state.historyArrowAttempt;
     handler();
+    if (state.historyArrowAttempt === prevAttempt && prevAttempt > 0) {
+      state.historyArrowAttempt = 0;
+    }
+  } else if (state.historyArrowAttempt > 0) {
+    state.historyArrowAttempt = 0;
   }
 }
 

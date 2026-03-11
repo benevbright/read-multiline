@@ -63,9 +63,7 @@ describe("saveHistory", () => {
   afterEach(cleanup);
 
   it("creates parent directory and writes JSON", async () => {
-    saveHistory(testFile, ["entry1", "entry2"]);
-    // saveHistory is async, wait a bit
-    await new Promise((r) => setTimeout(r, 50));
+    await saveHistory(testFile, ["entry1", "entry2"]);
     const data = JSON.parse(readFileSync(testFile, "utf8"));
     expect(data).toEqual(["entry1", "entry2"]);
   });
