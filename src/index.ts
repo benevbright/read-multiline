@@ -102,7 +102,7 @@ function readFromTTY(
       linePromptWidth: stringWidth(linePrompt),
       statusText: "",
       statusColor: "",
-      footerText: typeof footer === "string" ? footer : "",
+      footerText: footer ?? "",
       history: historyEntries ? [...historyEntries] : [],
       historyIndex: historyEntries ? historyEntries.length : 0,
       draft: initialValue ?? "",
@@ -211,7 +211,7 @@ function readFromTTY(
       state.col = state.lines[state.row].length;
     }
 
-    if (typeof footer === "string") {
+    if (footer) {
       const endRow = state.lines.length - 1;
       const dr = endRow - state.row;
       if (dr > 0) w(state, `\x1b[${dr}B`);
@@ -222,12 +222,6 @@ function readFromTTY(
       const upCount = endRow + footerLines.length - state.row;
       if (upCount > 0) w(state, `\x1b[${upCount}A`);
       w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
-    } else if (footer) {
-      // Promise<string>: show footer once resolved
-      footer.then((text) => {
-        if (state.footerText || !text) return; // already cleaned up or empty
-        setFooter(state, text);
-      });
     }
 
     input.setRawMode?.(true);

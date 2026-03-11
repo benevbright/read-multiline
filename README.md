@@ -72,7 +72,7 @@ try {
 | `validateDebounceMs` | `number`                                         | `300`            | Debounce interval for live validation                |
 | `submitOnEnter`      | `boolean`                                        | `true`           | `true`: Enter=submit, `false`: Enter=newline         |
 | `disabledKeys`       | `ModifiedEnterKey[]`                             | `[]`             | Key combos to disable                                |
-| `footer`             | `string \| Promise<string>`                      | `undefined`      | Fixed footer text below the editor                   |
+| `footer`             | `string`                                         | `undefined`      | Fixed footer text below the editor                   |
 | `helpFooter`         | `boolean \| HelpFooterDisplayOptions`            | `undefined`      | Auto-generated key bindings help footer              |
 
 ### Key Bindings
@@ -168,11 +168,6 @@ await readMultiline({
 await readMultiline({
   footer: "Type your message below",
   helpFooter: true,
-});
-
-// Custom footer with Promise (shown once resolved)
-await readMultiline({
-  footer: fetchFooterText(),
 });
 ```
 

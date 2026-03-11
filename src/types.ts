@@ -68,8 +68,8 @@ export interface ReadMultilineOptions {
    */
   disabledKeys?: ModifiedEnterKey[];
 
-  /** Fixed footer text displayed below the editor. Appears below the status line. If a Promise is provided, the footer is shown once it resolves. */
-  footer?: string | Promise<string>;
+  /** Fixed footer text displayed below the editor. Appears below the status line. */
+  footer?: string;
 
   /**
    * Auto-generated help footer showing key bindings.
