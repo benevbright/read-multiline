@@ -247,7 +247,9 @@ function readFromTTY(
           disabledKeys,
           columns: cols,
         });
-        return customFooter ? customFooter + "\n" + helpText : helpText;
+        if (!customFooter) return helpText;
+        if (!helpText) return customFooter;
+        return customFooter + "\n" + helpText;
       };
 
       const ttyOut = output as NodeJS.WriteStream;

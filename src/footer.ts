@@ -243,6 +243,7 @@ export function buildHelpFooter(options: HelpFooterOptions = {}): string {
   const { style = "dim", keyStyle, columns, maxLines } = options;
   const termWidth = columns ?? (process.stdout.columns || 80);
   const items = buildItems(options);
+  if (items.length === 0) return "";
   const text = formatGrid(items, keyStyle, termWidth, maxLines);
   return style ? styleText(style, text) : text;
 }
