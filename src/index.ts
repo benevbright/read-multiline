@@ -1,12 +1,18 @@
 import { stringWidth } from "./chars.js";
 import { handleDelete } from "./editing.js";
+import { buildHelpFooter, detectKittyProtocol } from "./footer.js";
 import { buildKeyMap, onData } from "./input.js";
-import { clearBelowEditor, clearScreen, setStatus, tCol, w } from "./rendering.js";
+import { clearBelowEditor, clearScreen, setFooter, setStatus, tCol, w } from "./rendering.js";
 import type { EditorState, ReadMultilineOptions, TTYInput } from "./types.js";
 import { CancelError, EOFError } from "./types.js";
 
 export { CancelError, EOFError } from "./types.js";
-export type { ModifiedEnterKey, ReadMultilineOptions, TTYInput } from "./types.js";
+export type {
+  HelpFooterDisplayOptions,
+  ModifiedEnterKey,
+  ReadMultilineOptions,
+  TTYInput,
+} from "./types.js";
 
 /**
  * Read multi-line input from the terminal.
@@ -82,6 +88,7 @@ function readFromTTY(
       submitOnEnter = true,
       disabledKeys = [],
       footer,
+      helpFooter,
     } = options;
 
     const state: EditorState = {
@@ -95,7 +102,7 @@ function readFromTTY(
       linePromptWidth: stringWidth(linePrompt),
       statusText: "",
       statusColor: "",
-      footerText: footer ?? "",
+      footerText: typeof footer === "string" ? footer : "",
       history: historyEntries ? [...historyEntries] : [],
       historyIndex: historyEntries ? historyEntries.length : 0,
       draft: initialValue ?? "",
@@ -204,20 +211,48 @@ function readFromTTY(
       state.col = state.lines[state.row].length;
     }
 
-    if (footer) {
+    if (typeof footer === "string") {
       const endRow = state.lines.length - 1;
       const dr = endRow - state.row;
       if (dr > 0) w(state, `\x1b[${dr}B`);
-      w(state, "\r\n" + footer + "\x1b[K");
-      const upCount = endRow + 1 - state.row;
+      const footerLines = footer.split("\n");
+      for (const line of footerLines) {
+        w(state, "\r\n" + line + "\x1b[K");
+      }
+      const upCount = endRow + footerLines.length - state.row;
       if (upCount > 0) w(state, `\x1b[${upCount}A`);
       w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
+    } else if (footer) {
+      // Promise<string>: show footer once resolved
+      footer.then((text) => {
+        if (state.footerText || !text) return; // already cleaned up or empty
+        setFooter(state, text);
+      });
     }
 
     input.setRawMode?.(true);
     input.resume();
     w(state, "\x1b[>1u"); // Enable kitty keyboard protocol
     w(state, "\x1b[?2004h"); // Enable bracketed paste mode
+
+    // helpFooter: auto-generated key bindings help, shown after kitty detection
+    // Must run after raw mode is enabled so the terminal can respond to the query
+    if (helpFooter) {
+      const helpOpts = typeof helpFooter === "object" ? helpFooter : {};
+      const ttyOutput = output as NodeJS.WriteStream;
+      const columns = ("columns" in ttyOutput && ttyOutput.columns) || 80;
+
+      detectKittyProtocol(input, output).then(() => {
+        const helpText = buildHelpFooter({
+          ...helpOpts,
+          submitOnEnter,
+          disabledKeys,
+          columns,
+        });
+        const combined = state.footerText ? state.footerText + "\n" + helpText : helpText;
+        setFooter(state, combined);
+      });
+    }
 
     function dataHandler(data: Buffer) {
       onData(state, data);
