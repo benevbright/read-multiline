@@ -1,5 +1,11 @@
 # @toiroakr/read-multiline
 
+## 0.4.0
+
+### Minor Changes
+
+- 3ef5928: Add `clearAfterSubmit` option (default: `true`) that clears the editor input from the terminal after submission. Set to `false` to preserve the previous behavior where input remains visible.
+
 ## 0.3.0
 
 ### Minor Changes
