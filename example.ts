@@ -16,7 +16,6 @@ while (true) {
       helpFooter: true,
     });
 
-    console.log("");
     console.log("--- Received input ---");
     console.log(result);
     console.log("--- End ---");
