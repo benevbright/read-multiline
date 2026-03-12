@@ -92,6 +92,7 @@ function readFromTTY(
       submitOnEnter = true,
       disabledKeys = [],
       footer,
+      clearAfterSubmit = true,
       helpFooter = true,
     } = options;
 
@@ -186,9 +187,23 @@ function readFromTTY(
           return;
         }
       }
-      cleanup();
-      w(state, "\n");
       const result = state.lines.join("\n");
+      if (clearAfterSubmit) {
+        // Clear editor + status + footer in one pass before cleanup
+        // to avoid scroll issues from clearBelowEditor's \r\n
+        if (state.row > 0) w(state, `\x1b[${state.row}A`);
+        w(state, "\r\x1b[J");
+        // Reset state so cleanup's clearBelowEditor is a no-op
+        state.statusText = "";
+        state.statusColor = "";
+        state.footerText = "";
+        state.row = 0;
+        state.col = 0;
+      }
+      cleanup();
+      if (!clearAfterSubmit) {
+        w(state, "\n");
+      }
       if (historyConfig?.filePath) {
         const maxEntries = historyConfig.maxEntries ?? 100;
         const updated = appendHistory(state.history, result, maxEntries);

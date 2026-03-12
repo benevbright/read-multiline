@@ -84,6 +84,13 @@ export interface ReadMultilineOptions {
   footer?: string;
 
   /**
+   * Whether to clear the input from the terminal after submission (default: true).
+   * - true: input is erased from the terminal after submit
+   * - false: input remains visible in the terminal after submit
+   */
+  clearAfterSubmit?: boolean;
+
+  /**
    * Auto-generated help footer showing key bindings.
    * Displayed below the custom footer (if any), after kitty protocol detection completes.
    * - true: show with default options

@@ -1708,6 +1708,48 @@ describe("readMultiline (TTY mode)", () => {
     input.send("\n");
     expect(await promise).toBe("text");
   });
+
+  // --- clearAfterSubmit option ---
+
+  it("clearAfterSubmit=true (default): clears input from terminal after submit", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("hello");
+    input.send(KEY.ENTER);
+    await promise;
+    const raw = output.chunks.join("");
+    // Should contain \r\x1b[J (clear from cursor to end of screen) instead of trailing \n
+    expect(raw).toContain("\r\x1b[J");
+    // No \n should appear after the clear sequence
+    const clearIdx = raw.lastIndexOf("\r\x1b[J");
+    const afterClear = raw.slice(clearIdx + "\r\x1b[J".length);
+    expect(afterClear).not.toContain("\n");
+  });
+
+  it("clearAfterSubmit=false: input remains visible after submit", async () => {
+    const promise = readMultiline({ input, output: output.stream, clearAfterSubmit: false });
+    input.send("hello");
+    input.send(KEY.ENTER);
+    await promise;
+    const raw = output.chunks.join("");
+    // Should end with a newline (input remains visible)
+    expect(raw.endsWith("\n")).toBe(true);
+  });
+
+  it("clearAfterSubmit=true: clears multi-line input", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    input.send("line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("line2");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toBe("line1\nline2");
+    const raw = output.chunks.join("");
+    // Should contain the submit-time clear sequence for multi-line input
+    const clearIdx = raw.lastIndexOf("\r\x1b[J");
+    expect(clearIdx).toBeGreaterThan(-1);
+    const afterClear = raw.slice(clearIdx + "\r\x1b[J".length);
+    expect(afterClear).not.toContain("\n");
+  });
 });
 
 describe("readMultiline (pipe mode)", () => {
