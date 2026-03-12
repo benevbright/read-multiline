@@ -198,6 +198,7 @@ function readFromTTY(
         state.statusColor = "";
         state.footerText = "";
         state.row = 0;
+        state.col = 0;
       }
       cleanup();
       if (!clearAfterSubmit) {

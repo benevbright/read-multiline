@@ -1744,8 +1744,11 @@ describe("readMultiline (TTY mode)", () => {
     const result = await promise;
     expect(result).toBe("line1\nline2");
     const raw = output.chunks.join("");
-    // Should contain cursor-up and clear sequence for multi-line
-    expect(raw).toContain("\x1b[J");
+    // Should contain the submit-time clear sequence for multi-line input
+    const clearIdx = raw.lastIndexOf("\r\x1b[J");
+    expect(clearIdx).toBeGreaterThan(-1);
+    const afterClear = raw.slice(clearIdx + "\r\x1b[J".length);
+    expect(afterClear).not.toContain("\n");
   });
 });
 
