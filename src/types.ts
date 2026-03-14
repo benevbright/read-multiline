@@ -2,21 +2,23 @@ import type { styleText } from "node:util";
 
 type StyleTextFormat = Parameters<typeof styleText>[0];
 
-/** Error thrown when the user cancels input with Ctrl+C (when no onCancel callback is provided). */
-export class CancelError extends Error {
-  constructor() {
-    super("Input cancelled");
-    this.name = "CancelError";
-  }
+/** Error returned when the user cancels input with Ctrl+C. */
+export interface CancelError {
+  kind: "cancel";
+  message: "Input cancelled";
 }
 
-/** Error thrown when Ctrl+D is pressed on empty input. */
-export class EOFError extends Error {
-  constructor() {
-    super("EOF received on empty input");
-    this.name = "EOFError";
-  }
+/** Error returned when Ctrl+D is pressed on empty input. */
+export interface EOFError {
+  kind: "eof";
+  message: "EOF received on empty input";
 }
+
+/** Union of errors that readMultiline can return. */
+export type ReadMultilineError = CancelError | EOFError;
+
+/** Result tuple: [value, null] on success, [null, error] on failure. */
+export type ReadMultilineResult = [string, null] | [null, ReadMultilineError];
 
 export interface ReadMultilineOptions {
   /** Prompt displayed on the first line */
@@ -60,9 +62,6 @@ export interface ReadMultilineOptions {
 
   /** Debounce interval (ms) for live validation after first submit failure (default: 300) */
   validateDebounceMs?: number;
-
-  /** Callback invoked when Ctrl+C is pressed. Called after cleanup. Default: rejects with CancelError. */
-  onCancel?: () => void;
 
   /**
    * Whether Enter submits the input (default: true).
