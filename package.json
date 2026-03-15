@@ -58,7 +58,7 @@
     "oxlint": "1.54.0",
     "publint": "^0.3.18",
     "typescript": "5.9.3",
-    "vitest": "4.0.18"
+    "vitest": "4.1.0"
   },
   "packageManager": "pnpm@10.32.1",
   "pnpm": {
