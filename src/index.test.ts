@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CancelError, EOFError, readMultiline, type TTYInput } from "./index.js";
+import { readMultiline, type TTYInput } from "./index.js";
 
 // Dummy output stream that records writes
 function createNullOutput() {
@@ -88,7 +88,7 @@ describe("readMultiline (TTY mode)", () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("hello");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello");
+    expect(await promise).toEqual(["hello", null]);
   });
 
   it("inserts newline on Shift+Enter and submits on Enter", async () => {
@@ -97,7 +97,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.SHIFT_ENTER);
     input.send("line2");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("line1\nline2");
+    expect(await promise).toEqual(["line1\nline2", null]);
   });
 
   it("handles multiple Shift+Enter for multi-line input", async () => {
@@ -108,29 +108,24 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.SHIFT_ENTER);
     input.send("c");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("a\nb\nc");
+    expect(await promise).toEqual(["a\nb\nc", null]);
   });
 
-  it("throws CancelError on Ctrl+C", async () => {
+  it("returns CancelError on Ctrl+C", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("partial");
     input.send(KEY.CTRL_C);
-    await expect(promise).rejects.toThrow(CancelError);
+    const [value, error] = await promise;
+    expect(value).toBeNull();
+    expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
   });
 
-  it("throws CancelError on Ctrl+C with no input", async () => {
+  it("returns CancelError on Ctrl+C with no input", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send(KEY.CTRL_C);
-    await expect(promise).rejects.toThrow(CancelError);
-  });
-
-  it("calls onCancel and resolves with current content when provided", async () => {
-    const onCancel = vi.fn();
-    const promise = readMultiline({ input, output: output.stream, onCancel });
-    input.send("partial");
-    input.send(KEY.CTRL_C);
-    expect(onCancel).toHaveBeenCalledOnce();
-    expect(await promise).toBe("partial");
+    const [value, error] = await promise;
+    expect(value).toBeNull();
+    expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
   });
 
   it("deletes character at cursor on Ctrl+D when input exists", async () => {
@@ -140,26 +135,28 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT);
     input.send(KEY.CTRL_D); // delete 'x'
     input.send(KEY.ENTER);
-    expect(await promise).toBe("tet");
+    expect(await promise).toEqual(["tet", null]);
   });
 
-  it("throws EOFError on Ctrl+D when input is empty", async () => {
+  it("returns EOFError on Ctrl+D when input is empty", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send(KEY.CTRL_D);
-    await expect(promise).rejects.toThrow(EOFError);
+    const [value, error] = await promise;
+    expect(value).toBeNull();
+    expect(error).toEqual({ kind: "eof", message: "EOF received on empty input" });
   });
 
   it("returns empty string on Enter with no input", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send(KEY.ENTER);
-    expect(await promise).toBe("");
+    expect(await promise).toEqual(["", null]);
   });
 
   it("submits on kitty protocol Enter (CSI 13u)", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("test");
     input.send(KEY.KITTY_ENTER);
-    expect(await promise).toBe("test");
+    expect(await promise).toEqual(["test", null]);
   });
 
   // --- Backspace ---
@@ -169,7 +166,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("abc");
     input.send(KEY.BACKSPACE);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("ab");
+    expect(await promise).toEqual(["ab", null]);
   });
 
   it("merges lines on Backspace at line start", async () => {
@@ -178,7 +175,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.SHIFT_ENTER);
     input.send(KEY.BACKSPACE);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("line1");
+    expect(await promise).toEqual(["line1", null]);
   });
 
   // --- Ctrl+W (word deletion) ---
@@ -188,7 +185,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("hello world");
     input.send(KEY.CTRL_W);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello ");
+    expect(await promise).toEqual(["hello ", null]);
   });
 
   it("deletes trailing whitespace and word on Ctrl+W", async () => {
@@ -196,7 +193,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("hello  world  ");
     input.send(KEY.CTRL_W);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello  ");
+    expect(await promise).toEqual(["hello  ", null]);
   });
 
   it("deletes the entire line if it is a single word on Ctrl+W", async () => {
@@ -204,7 +201,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("hello");
     input.send(KEY.CTRL_W);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("");
+    expect(await promise).toEqual(["", null]);
   });
 
   it("merges with previous line on Ctrl+W at line start", async () => {
@@ -213,7 +210,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.SHIFT_ENTER);
     input.send(KEY.CTRL_W);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   it("deletes word from cursor mid-position on Ctrl+W", async () => {
@@ -224,7 +221,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // foo bar |baz
     input.send(KEY.CTRL_W); // delete " bar" -> "foo |baz"
     input.send(KEY.ENTER);
-    expect(await promise).toBe("foo baz");
+    expect(await promise).toEqual(["foo baz", null]);
   });
 
   it("deletes full-width word on Ctrl+W", async () => {
@@ -232,7 +229,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("hello \u3042\u3044\u3046");
     input.send(KEY.CTRL_W);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello ");
+    expect(await promise).toEqual(["hello ", null]);
   });
 
   // --- Backspace (additional) ---
@@ -243,7 +240,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // ab|c
     input.send(KEY.BACKSPACE); // a|c
     input.send(KEY.ENTER);
-    expect(await promise).toBe("ac");
+    expect(await promise).toEqual(["ac", null]);
   });
 
   // --- Shift+Enter line splitting ---
@@ -255,7 +252,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // ab|cd
     input.send(KEY.SHIFT_ENTER);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("ab\ncd");
+    expect(await promise).toEqual(["ab\ncd", null]);
   });
 
   // --- Arrow key movement ---
@@ -266,7 +263,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // a|c
     input.send("b");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   it("moves right after moving left", async () => {
@@ -277,7 +274,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.RIGHT); // ab|c
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abXc");
+    expect(await promise).toEqual(["abXc", null]);
   });
 
   it("crosses to previous line end on Left at line start", async () => {
@@ -290,7 +287,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // line 1 end (ab|)
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abX\ncd");
+    expect(await promise).toEqual(["abX\ncd", null]);
   });
 
   it("crosses to next line start on Right at line end", async () => {
@@ -308,7 +305,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.RIGHT); // line 2 start (|cd)
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("ab\nXcd");
+    expect(await promise).toEqual(["ab\nXcd", null]);
   });
 
   it("moves up to previous line", async () => {
@@ -319,7 +316,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.UP); // line 1, col=min(2, 3)=2 -> ab|c
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abXc\nde");
+    expect(await promise).toEqual(["abXc\nde", null]);
   });
 
   it("moves down to next line", async () => {
@@ -331,7 +328,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.DOWN); // line 2, col=min(2, 2)=2 -> de|
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc\ndeX");
+    expect(await promise).toEqual(["abc\ndeX", null]);
   });
 
   it("clamps column to line end when moving up to a shorter line", async () => {
@@ -342,7 +339,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.UP); // line 1, col=min(5, 2)=2 -> ab|
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abX\ncdefg");
+    expect(await promise).toEqual(["abX\ncdefg", null]);
   });
 
   // --- Alt+Arrow (word jump) ---
@@ -354,7 +351,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ALT_RIGHT); // hello|
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("helloX world");
+    expect(await promise).toEqual(["helloX world", null]);
   });
 
   it("jumps to word start on Alt+Left", async () => {
@@ -363,7 +360,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ALT_LEFT); // |world
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello Xworld");
+    expect(await promise).toEqual(["hello Xworld", null]);
   });
 
   it("crosses to next line on Alt+Right at line end", async () => {
@@ -376,7 +373,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ALT_RIGHT); // next line word end
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("ab\ncdX");
+    expect(await promise).toEqual(["ab\ncdX", null]);
   });
 
   it("crosses to previous line on Alt+Left at line start", async () => {
@@ -388,7 +385,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ALT_LEFT); // previous line
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("Xab\ncd");
+    expect(await promise).toEqual(["Xab\ncd", null]);
   });
 
   // --- Ctrl+Arrow (line start/end, buffer start/end) ---
@@ -400,7 +397,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_RIGHT); // -> end of line
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello worldX");
+    expect(await promise).toEqual(["hello worldX", null]);
   });
 
   it("moves to line start on Ctrl+Left", async () => {
@@ -409,7 +406,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_LEFT); // -> start of line
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("Xhello world");
+    expect(await promise).toEqual(["Xhello world", null]);
   });
 
   // --- ESC+b/f (macOS Option+Arrow fallback) ---
@@ -420,7 +417,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ESC_B); // |world
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello Xworld");
+    expect(await promise).toEqual(["hello Xworld", null]);
   });
 
   it("jumps to word end on ESC+f", async () => {
@@ -430,7 +427,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ESC_F); // hello|
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("helloX world");
+    expect(await promise).toEqual(["helloX world", null]);
   });
 
   // --- Cmd+Arrow (line start/end, buffer start/end) ---
@@ -441,7 +438,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CMD_LEFT); // |hello
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("Xhello");
+    expect(await promise).toEqual(["Xhello", null]);
   });
 
   it("moves to line end on Cmd+Right", async () => {
@@ -452,7 +449,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CMD_RIGHT); // hello|
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("helloX");
+    expect(await promise).toEqual(["helloX", null]);
   });
 
   it("moves to buffer start on Cmd+Up", async () => {
@@ -463,7 +460,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CMD_UP); // |line1
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("Xline1\nline2");
+    expect(await promise).toEqual(["Xline1\nline2", null]);
   });
 
   it("moves to buffer end on Cmd+Down", async () => {
@@ -475,7 +472,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CMD_DOWN); // line2|
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("line1\nline2X");
+    expect(await promise).toEqual(["line1\nline2X", null]);
   });
 
   it("Home/End keys work as line start/end", async () => {
@@ -486,7 +483,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.END); // Ahello|
     input.send("Z");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("AhelloZ");
+    expect(await promise).toEqual(["AhelloZ", null]);
   });
 
   // --- Protocol / Settings ---
@@ -538,7 +535,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("\x1b[99~");
     input.send("c");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   // --- Full-width characters ---
@@ -547,7 +544,7 @@ describe("readMultiline (TTY mode)", () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("\u3042\u3044\u3046");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("\u3042\u3044\u3046");
+    expect(await promise).toEqual(["\u3042\u3044\u3046", null]);
   });
 
   it("inserts at cursor position between full-width characters", async () => {
@@ -556,7 +553,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // \u3042|\u3046
     input.send("\u3044");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("\u3042\u3044\u3046");
+    expect(await promise).toEqual(["\u3042\u3044\u3046", null]);
   });
 
   it("deletes full-width character on Backspace", async () => {
@@ -564,7 +561,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("\u3042\u3044\u3046");
     input.send(KEY.BACKSPACE);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("\u3042\u3044");
+    expect(await promise).toEqual(["\u3042\u3044", null]);
   });
 
   it("deletes full-width character at cursor mid-position on Backspace", async () => {
@@ -573,7 +570,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // \u3042\u3044|\u3046
     input.send(KEY.BACKSPACE);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("\u3042\u3046");
+    expect(await promise).toEqual(["\u3042\u3046", null]);
   });
 
   it("moves correctly with Left/Right on full-width characters", async () => {
@@ -584,7 +581,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.RIGHT); // \u3042\u3044|\u3046
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("\u3042\u3044X\u3046");
+    expect(await promise).toEqual(["\u3042\u3044X\u3046", null]);
   });
 
   it("handles mixed half-width and full-width characters", async () => {
@@ -594,7 +591,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // a|\u3042b
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("aX\u3042b");
+    expect(await promise).toEqual(["aX\u3042b", null]);
   });
 
   // --- Paste ---
@@ -603,14 +600,14 @@ describe("readMultiline (TTY mode)", () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("\x1b[200~line1\nline2\nline3\x1b[201~");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("line1\nline2\nline3");
+    expect(await promise).toEqual(["line1\nline2\nline3", null]);
   });
 
   it("normalizes \\r\\n line endings in paste", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("\x1b[200~line1\r\nline2\r\nline3\x1b[201~");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("line1\nline2\nline3");
+    expect(await promise).toEqual(["line1\nline2\nline3", null]);
   });
 
   it("pastes into existing input at cursor position", async () => {
@@ -619,14 +616,14 @@ describe("readMultiline (TTY mode)", () => {
     input.send("\x1b[200~pasted1\npasted2\x1b[201~");
     input.send("after");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("beforepasted1\npasted2after");
+    expect(await promise).toEqual(["beforepasted1\npasted2after", null]);
   });
 
   it("treats \\r in paste as newline, not submit", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("\x1b[200~a\rb\x1b[201~");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("a\nb");
+    expect(await promise).toEqual(["a\nb", null]);
   });
 
   it("handles paste data split across multiple events", async () => {
@@ -634,7 +631,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("\x1b[200~hello\n");
     input.send("world\x1b[201~");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello\nworld");
+    expect(await promise).toEqual(["hello\nworld", null]);
   });
 
   it("continues key operations after paste", async () => {
@@ -642,7 +639,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("\x1b[200~abc\x1b[201~");
     input.send(KEY.BACKSPACE);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("ab");
+    expect(await promise).toEqual(["ab", null]);
   });
 
   // --- Full-width characters (additional) ---
@@ -655,7 +652,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CMD_RIGHT); // X\u3042\u3044\u3046|
     input.send("Y");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("X\u3042\u3044\u3046Y");
+    expect(await promise).toEqual(["X\u3042\u3044\u3046Y", null]);
   });
 
   // --- ANSI output correctness ---
@@ -703,7 +700,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("b"); // should combine to \x1bb = wordLeft -> |world
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello Xworld");
+    expect(await promise).toEqual(["hello Xworld", null]);
   });
 
   it("flushes standalone ESC after timeout", async () => {
@@ -715,7 +712,7 @@ describe("readMultiline (TTY mode)", () => {
     // ESC alone should be flushed and discarded (no keyMap match)
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abcX");
+    expect(await promise).toEqual(["abcX", null]);
   });
 
   // --- Kitty protocol key variants ---
@@ -724,7 +721,9 @@ describe("readMultiline (TTY mode)", () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("text");
     input.send("\x1b[99;5u");
-    await expect(promise).rejects.toThrow(CancelError);
+    const [value, error] = await promise;
+    expect(value).toBeNull();
+    expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
   });
 
   it("handles kitty Ctrl+D (CSI 100;5u) deletes character with input", async () => {
@@ -733,13 +732,15 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT);
     input.send("\x1b[100;5u"); // delete 't' at end
     input.send(KEY.ENTER);
-    expect(await promise).toBe("tex");
+    expect(await promise).toEqual(["tex", null]);
   });
 
   it("handles kitty Ctrl+D (CSI 100;5u) on empty input", async () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("\x1b[100;5u");
-    await expect(promise).rejects.toThrow(EOFError);
+    const [value, error] = await promise;
+    expect(value).toBeNull();
+    expect(error).toEqual({ kind: "eof", message: "EOF received on empty input" });
   });
 
   it("handles kitty Ctrl+W (CSI 119;5u)", async () => {
@@ -747,7 +748,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("hello world");
     input.send("\x1b[119;5u");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello ");
+    expect(await promise).toEqual(["hello ", null]);
   });
 
   it("handles kitty Ctrl+A (CSI 97;5u) as line start", async () => {
@@ -756,7 +757,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("\x1b[97;5u"); // line start
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("Xhello");
+    expect(await promise).toEqual(["Xhello", null]);
   });
 
   it("handles kitty Ctrl+E (CSI 101;5u) as line end", async () => {
@@ -767,7 +768,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("\x1b[101;5u"); // line end
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("helloX");
+    expect(await promise).toEqual(["helloX", null]);
   });
 
   // --- Edge cases: boundary no-ops ---
@@ -777,7 +778,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.BACKSPACE);
     input.send("abc");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   it("moves to line start on Up at first line", async () => {
@@ -786,7 +787,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.UP); // col=3 -> col=0
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("Xabc");
+    expect(await promise).toEqual(["Xabc", null]);
   });
 
   it("does nothing on Up at first line col 0", async () => {
@@ -796,7 +797,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.UP); // already at col=0, no history, no-op
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("Xabc");
+    expect(await promise).toEqual(["Xabc", null]);
   });
 
   it("does nothing on Down at last line", async () => {
@@ -805,7 +806,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.DOWN);
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abcX");
+    expect(await promise).toEqual(["abcX", null]);
   });
 
   it("does nothing on Left at start of first line", async () => {
@@ -815,7 +816,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // already at absolute start
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("Xabc");
+    expect(await promise).toEqual(["Xabc", null]);
   });
 
   it("does nothing on Right at end of last line", async () => {
@@ -824,7 +825,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.RIGHT); // already at end
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abcX");
+    expect(await promise).toEqual(["abcX", null]);
   });
 
   it("does nothing on Cmd+Left when already at line start", async () => {
@@ -834,7 +835,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CMD_LEFT); // already at start
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("Xabc");
+    expect(await promise).toEqual(["Xabc", null]);
   });
 
   it("does nothing on Cmd+Right when already at line end", async () => {
@@ -843,7 +844,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CMD_RIGHT); // already at end
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abcX");
+    expect(await promise).toEqual(["abcX", null]);
   });
 
   it("Ctrl+W on empty line does nothing", async () => {
@@ -851,7 +852,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_W);
     input.send("abc");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   // --- Surrogate pair characters (emoji) ---
@@ -860,7 +861,7 @@ describe("readMultiline (TTY mode)", () => {
     const promise = readMultiline({ input, output: output.stream });
     input.send("a\u{1F600}b"); // 😀
     input.send(KEY.ENTER);
-    expect(await promise).toBe("a\u{1F600}b");
+    expect(await promise).toEqual(["a\u{1F600}b", null]);
   });
 
   it("deletes surrogate pair character on Backspace", async () => {
@@ -869,7 +870,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.BACKSPACE); // delete b
     input.send(KEY.BACKSPACE); // delete 😀
     input.send(KEY.ENTER);
-    expect(await promise).toBe("a");
+    expect(await promise).toEqual(["a", null]);
   });
 
   it("moves cursor correctly around surrogate pair characters", async () => {
@@ -879,7 +880,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // a|😀b
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("aX\u{1F600}b");
+    expect(await promise).toEqual(["aX\u{1F600}b", null]);
   });
 
   // --- Cleanup ---
@@ -899,7 +900,9 @@ describe("readMultiline (TTY mode)", () => {
     // Wait for the ESC timer to flush (50ms), then cancel normally
     await new Promise((r) => setTimeout(r, 80));
     input.send(KEY.CTRL_C);
-    await expect(promise).rejects.toThrow(CancelError);
+    const [value, error] = await promise;
+    expect(value).toBeNull();
+    expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
     // If escTimer wasn't properly handled, the timer would fire after cleanup
     // and potentially cause errors. This test verifies cleanup completes cleanly.
   });
@@ -928,7 +931,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // ab|c
     input.send(KEY.DELETE); // ab|
     input.send(KEY.ENTER);
-    expect(await promise).toBe("ab");
+    expect(await promise).toEqual(["ab", null]);
   });
 
   it("merges next line on Delete at line end", async () => {
@@ -940,7 +943,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CMD_RIGHT); // end of line 1: ab|
     input.send(KEY.DELETE); // merge: abcd|
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abcd");
+    expect(await promise).toEqual(["abcd", null]);
   });
 
   it("does nothing on Delete at end of last line", async () => {
@@ -948,7 +951,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("abc");
     input.send(KEY.DELETE);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   it("deletes full-width character on Delete", async () => {
@@ -958,7 +961,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // あ|いう
     input.send(KEY.DELETE); // あ|う
     input.send(KEY.ENTER);
-    expect(await promise).toBe("\u3042\u3046");
+    expect(await promise).toEqual(["\u3042\u3046", null]);
   });
 
   // --- Ctrl+U (delete to line start) ---
@@ -973,7 +976,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // hello |world
     input.send(KEY.CTRL_U); // |world
     input.send(KEY.ENTER);
-    expect(await promise).toBe("world");
+    expect(await promise).toEqual(["world", null]);
   });
 
   it("does nothing on Ctrl+U at line start", async () => {
@@ -982,7 +985,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CMD_LEFT);
     input.send(KEY.CTRL_U);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   // --- Ctrl+K (delete to line end) ---
@@ -997,7 +1000,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.LEFT); // hello |world
     input.send(KEY.CTRL_K); // hello |
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello ");
+    expect(await promise).toEqual(["hello ", null]);
   });
 
   it("does nothing on Ctrl+K at line end", async () => {
@@ -1005,7 +1008,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("abc");
     input.send(KEY.CTRL_K);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   // --- initialValue ---
@@ -1017,7 +1020,7 @@ describe("readMultiline (TTY mode)", () => {
       initialValue: "hello",
     });
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello");
+    expect(await promise).toEqual(["hello", null]);
   });
 
   it("pre-populates multi-line initialValue", async () => {
@@ -1027,7 +1030,7 @@ describe("readMultiline (TTY mode)", () => {
       initialValue: "line1\nline2\nline3",
     });
     input.send(KEY.ENTER);
-    expect(await promise).toBe("line1\nline2\nline3");
+    expect(await promise).toEqual(["line1\nline2\nline3", null]);
   });
 
   it("allows editing after initialValue", async () => {
@@ -1038,7 +1041,7 @@ describe("readMultiline (TTY mode)", () => {
     });
     input.send(" world");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello world");
+    expect(await promise).toEqual(["hello world", null]);
   });
 
   // --- History ---
@@ -1051,7 +1054,7 @@ describe("readMultiline (TTY mode)", () => {
     });
     input.send(KEY.UP); // -> "second"
     input.send(KEY.ENTER);
-    expect(await promise).toBe("second");
+    expect(await promise).toEqual(["second", null]);
   });
 
   it("navigates through history entries", async () => {
@@ -1063,7 +1066,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.UP); // -> "second" (cursor at start)
     input.send(KEY.UP); // -> "first" (cursor already at start)
     input.send(KEY.ENTER);
-    expect(await promise).toBe("first");
+    expect(await promise).toEqual(["first", null]);
   });
 
   it("returns to draft on Down past end of history", async () => {
@@ -1079,7 +1082,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.DOWN); // -> "draft" (cursor at end)
     input.send(KEY.DOWN); // no-op (already at current draft)
     input.send(KEY.ENTER);
-    expect(await promise).toBe("draft");
+    expect(await promise).toEqual(["draft", null]);
   });
 
   it("Up at first line with col > 0 moves to col 0 instead of history", async () => {
@@ -1092,7 +1095,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.UP); // col=4 -> col=0 (not history)
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("Xtext");
+    expect(await promise).toEqual(["Xtext", null]);
   });
 
   it("Down at last line with col < end moves to end instead of history", async () => {
@@ -1110,7 +1113,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.DOWN); // col=0 -> col=end (not next history)
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("textX");
+    expect(await promise).toEqual(["textX", null]);
   });
 
   it("does not go past beginning of history", async () => {
@@ -1122,7 +1125,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.UP); // -> "only"
     input.send(KEY.UP); // no-op (already at oldest)
     input.send(KEY.ENTER);
-    expect(await promise).toBe("only");
+    expect(await promise).toEqual(["only", null]);
   });
 
   it("Up on non-first line moves cursor, not history", async () => {
@@ -1137,7 +1140,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.UP); // move to line 1 (col clamped to min(5,5)=5 = end)
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("line1X\nline2");
+    expect(await promise).toEqual(["line1X\nline2", null]);
   });
 
   it("Down on non-last line moves cursor, not history", async () => {
@@ -1153,7 +1156,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.DOWN); // move to line 2 (col clamped to min(5,5)=5 = end)
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("line1\nline2X");
+    expect(await promise).toEqual(["line1\nline2X", null]);
   });
 
   it("Alt+Up/Down navigates history directly", async () => {
@@ -1166,7 +1169,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ALT_UP); // -> "old" (history prev, cursor at start)
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("Xold");
+    expect(await promise).toEqual(["Xold", null]);
   });
 
   it("navigates multi-line history entries", async () => {
@@ -1177,7 +1180,7 @@ describe("readMultiline (TTY mode)", () => {
     });
     input.send(KEY.UP); // -> "line1\nline2"
     input.send(KEY.ENTER);
-    expect(await promise).toBe("line1\nline2");
+    expect(await promise).toEqual(["line1\nline2", null]);
   });
 
   // --- historyArrowNavigation: "double" ---
@@ -1192,7 +1195,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.UP); // first press: no-op
     input.send("X"); // typing resets the counter
     input.send(KEY.ENTER);
-    expect(await promise).toBe("X");
+    expect(await promise).toEqual(["X", null]);
   });
 
   it("double mode: two consecutive Up presses at boundary navigates history", async () => {
@@ -1205,7 +1208,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.UP); // first press
     input.send(KEY.UP); // second press -> history
     input.send(KEY.ENTER);
-    expect(await promise).toBe("old");
+    expect(await promise).toEqual(["old", null]);
   });
 
   // --- historyArrowNavigation: "disabled" ---
@@ -1221,7 +1224,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.UP); // still no-op
     input.send("new");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("new");
+    expect(await promise).toEqual(["new", null]);
   });
 
   it("disabled mode: dedicated keys still navigate history", async () => {
@@ -1233,7 +1236,7 @@ describe("readMultiline (TTY mode)", () => {
     });
     input.send(KEY.ALT_UP); // dedicated key still works
     input.send(KEY.ENTER);
-    expect(await promise).toBe("old");
+    expect(await promise).toEqual(["old", null]);
   });
 
   // --- Dedicated history keys ---
@@ -1248,7 +1251,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_P); // -> "first" (cursor at start)
     input.send(KEY.CTRL_N); // -> "second"
     input.send(KEY.ENTER);
-    expect(await promise).toBe("second");
+    expect(await promise).toEqual(["second", null]);
   });
 
   it("PageUp/PageDown navigates history", async () => {
@@ -1261,7 +1264,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.PAGE_UP); // -> "first" (cursor at start)
     input.send(KEY.PAGE_DOWN); // -> "second"
     input.send(KEY.ENTER);
-    expect(await promise).toBe("second");
+    expect(await promise).toEqual(["second", null]);
   });
 
   // --- Ctrl+Up/Down for buffer navigation ---
@@ -1277,7 +1280,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_UP); // -> buffer start (row 0, col 0)
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("Xline1\nline2");
+    expect(await promise).toEqual(["Xline1\nline2", null]);
   });
 
   it("Ctrl+Down moves to buffer end", async () => {
@@ -1292,7 +1295,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_DOWN); // -> buffer end
     input.send("X");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("line1\nline2X");
+    expect(await promise).toEqual(["line1\nline2X", null]);
   });
 
   // --- Validation ---
@@ -1307,7 +1310,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ENTER); // validation fails, does not submit
     input.send("c"); // now "abc"
     input.send(KEY.ENTER); // validation passes
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   it("submits when validation returns undefined", async () => {
@@ -1318,7 +1321,7 @@ describe("readMultiline (TTY mode)", () => {
     });
     input.send("anything");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("anything");
+    expect(await promise).toEqual(["anything", null]);
   });
 
   it("submits when validation returns null", async () => {
@@ -1329,7 +1332,7 @@ describe("readMultiline (TTY mode)", () => {
     });
     input.send("anything");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("anything");
+    expect(await promise).toEqual(["anything", null]);
   });
 
   // --- Max lines ---
@@ -1346,7 +1349,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.SHIFT_ENTER); // blocked
     input.send("line3");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("line1\nline2line3");
+    expect(await promise).toEqual(["line1\nline2line3", null]);
   });
 
   // --- Max length ---
@@ -1360,7 +1363,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("abcde");
     input.send("f"); // blocked
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abcde");
+    expect(await promise).toEqual(["abcde", null]);
   });
 
   it("counts newlines in maxLength", async () => {
@@ -1374,7 +1377,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("cd"); // "ab\ncd" = 5 chars
     input.send("e"); // blocked
     input.send(KEY.ENTER);
-    expect(await promise).toBe("ab\ncd");
+    expect(await promise).toEqual(["ab\ncd", null]);
   });
 
   it("allows deletion when at maxLength", async () => {
@@ -1387,7 +1390,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.BACKSPACE); // "ab"
     input.send("d"); // "abd" (back at limit)
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abd");
+    expect(await promise).toEqual(["abd", null]);
   });
 
   // --- Ctrl+L ---
@@ -1397,7 +1400,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("hello");
     input.send(KEY.CTRL_L);
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello");
+    expect(await promise).toEqual(["hello", null]);
   });
 
   // --- Undo / Redo ---
@@ -1407,7 +1410,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("abc");
     input.send(KEY.CTRL_Z); // undo grouped "abc" insert
     input.send(KEY.ENTER);
-    expect(await promise).toBe("");
+    expect(await promise).toEqual(["", null]);
   });
 
   it("undoes and redoes with Ctrl+Z / Ctrl+Y", async () => {
@@ -1416,7 +1419,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_Z); // undo
     input.send(KEY.CTRL_Y); // redo
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello");
+    expect(await promise).toEqual(["hello", null]);
   });
 
   it("undoes newline insertion", async () => {
@@ -1425,7 +1428,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.SHIFT_ENTER);
     input.send(KEY.CTRL_Z); // undo newline
     input.send(KEY.ENTER);
-    expect(await promise).toBe("ab");
+    expect(await promise).toEqual(["ab", null]);
   });
 
   it("undoes backspace", async () => {
@@ -1434,7 +1437,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.BACKSPACE); // delete c
     input.send(KEY.CTRL_Z); // undo backspace
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   it("undoes delete key", async () => {
@@ -1444,7 +1447,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.DELETE); // ab|
     input.send(KEY.CTRL_Z); // undo delete
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   it("undoes Ctrl+W word deletion", async () => {
@@ -1453,7 +1456,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_W); // delete "world"
     input.send(KEY.CTRL_Z); // undo
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello world");
+    expect(await promise).toEqual(["hello world", null]);
   });
 
   it("undoes Ctrl+U delete to line start", async () => {
@@ -1462,7 +1465,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_U); // delete all
     input.send(KEY.CTRL_Z); // undo
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello");
+    expect(await promise).toEqual(["hello", null]);
   });
 
   it("undoes Ctrl+K delete to line end", async () => {
@@ -1472,7 +1475,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_K); // delete all
     input.send(KEY.CTRL_Z); // undo
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello");
+    expect(await promise).toEqual(["hello", null]);
   });
 
   it("multiple undos step through history", async () => {
@@ -1483,7 +1486,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_Z); // undo "bbb"
     input.send(KEY.CTRL_Z); // undo newline
     input.send(KEY.ENTER);
-    expect(await promise).toBe("aaa");
+    expect(await promise).toEqual(["aaa", null]);
   });
 
   it("redo is cleared on new edit after undo", async () => {
@@ -1493,7 +1496,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("xyz"); // new edit, clears redo
     input.send(KEY.CTRL_Y); // redo does nothing
     input.send(KEY.ENTER);
-    expect(await promise).toBe("xyz");
+    expect(await promise).toEqual(["xyz", null]);
   });
 
   it("Ctrl+Shift+Z works as redo (kitty)", async () => {
@@ -1502,7 +1505,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_Z); // undo
     input.send(KEY.CTRL_SHIFT_Z); // redo
     input.send(KEY.ENTER);
-    expect(await promise).toBe("hello");
+    expect(await promise).toEqual(["hello", null]);
   });
 
   it("undo does nothing when stack is empty", async () => {
@@ -1510,7 +1513,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_Z); // nothing to undo
     input.send("abc");
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   it("redo does nothing when stack is empty", async () => {
@@ -1518,7 +1521,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("abc");
     input.send(KEY.CTRL_Y); // nothing to redo
     input.send(KEY.ENTER);
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   it("undoes paste as a single unit", async () => {
@@ -1527,7 +1530,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("\x1b[200~line1\nline2\nline3\x1b[201~");
     input.send(KEY.CTRL_Z); // undo entire paste
     input.send(KEY.ENTER);
-    expect(await promise).toBe("before");
+    expect(await promise).toEqual(["before", null]);
   });
 
   it("groups consecutive character inserts into one undo step", async () => {
@@ -1537,7 +1540,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("c"); // all grouped as one insert
     input.send(KEY.CTRL_Z); // undo all three at once
     input.send(KEY.ENTER);
-    expect(await promise).toBe("");
+    expect(await promise).toEqual(["", null]);
   });
 
   it("newline breaks insert grouping for undo", async () => {
@@ -1549,7 +1552,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.CTRL_Z); // undo newline
     input.send(KEY.CTRL_Z); // undo "abc"
     input.send(KEY.ENTER);
-    expect(await promise).toBe("");
+    expect(await promise).toEqual(["", null]);
   });
 
   // --- submitOnEnter option ---
@@ -1564,7 +1567,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ENTER); // inserts newline
     input.send("line2");
     input.send(KEY.SHIFT_ENTER); // submits (any modified enter works)
-    expect(await promise).toBe("line1\nline2");
+    expect(await promise).toEqual(["line1\nline2", null]);
   });
 
   it("submitOnEnter=false: Ctrl+J submits", async () => {
@@ -1576,7 +1579,7 @@ describe("readMultiline (TTY mode)", () => {
     });
     input.send("hello");
     input.send(CTRL_J); // submits
-    expect(await promise).toBe("hello");
+    expect(await promise).toEqual(["hello", null]);
   });
 
   it("submitOnEnter=false: Cmd+Enter submits", async () => {
@@ -1590,7 +1593,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ENTER); // inserts newline
     input.send("line2");
     input.send(CMD_ENTER); // submits
-    expect(await promise).toBe("line1\nline2");
+    expect(await promise).toEqual(["line1\nline2", null]);
   });
 
   it("submitOnEnter=false: Ctrl+Enter (kitty) submits", async () => {
@@ -1602,7 +1605,7 @@ describe("readMultiline (TTY mode)", () => {
     });
     input.send("text");
     input.send(CTRL_ENTER); // submits
-    expect(await promise).toBe("text");
+    expect(await promise).toEqual(["text", null]);
   });
 
   it("submitOnEnter=false: Alt+Enter (legacy ESC+CR) submits", async () => {
@@ -1614,7 +1617,7 @@ describe("readMultiline (TTY mode)", () => {
     });
     input.send("text");
     input.send(ALT_ENTER_LEGACY); // submits
-    expect(await promise).toBe("text");
+    expect(await promise).toEqual(["text", null]);
   });
 
   it("submitOnEnter=true (default): all modified enters insert newline", async () => {
@@ -1629,7 +1632,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(CTRL_J); // newline (Ctrl+J)
     input.send("c");
     input.send(KEY.ENTER); // submits
-    expect(await promise).toBe("a\nb\nc");
+    expect(await promise).toEqual(["a\nb\nc", null]);
   });
 
   it("submitOnEnter=false: plain Enter does not submit", async () => {
@@ -1644,7 +1647,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ENTER); // newline
     input.send("c");
     input.send(KEY.SHIFT_ENTER); // submits
-    expect(await promise).toBe("a\nb\nc");
+    expect(await promise).toEqual(["a\nb\nc", null]);
   });
 
   it("submitOnEnter=false: validation runs on modified enter submit", async () => {
@@ -1659,7 +1662,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(CMD_ENTER); // validation fails, does not submit
     input.send("c"); // now "abc"
     input.send(CMD_ENTER); // validation passes
-    expect(await promise).toBe("abc");
+    expect(await promise).toEqual(["abc", null]);
   });
 
   it("submitOnEnter=false with maxLines: Enter respects maxLines", async () => {
@@ -1675,7 +1678,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.ENTER); // blocked by maxLines
     input.send("extra");
     input.send(KEY.SHIFT_ENTER); // submit
-    expect(await promise).toBe("line1\nline2extra");
+    expect(await promise).toEqual(["line1\nline2extra", null]);
   });
 
   // --- disabledKeys option ---
@@ -1692,7 +1695,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.SHIFT_ENTER); // newline still works
     input.send("world");
     input.send(KEY.ENTER); // submits
-    expect(await promise).toBe("hello\nworld");
+    expect(await promise).toEqual(["hello\nworld", null]);
   });
 
   it("disabledKeys works with submitOnEnter=false", async () => {
@@ -1706,7 +1709,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.SHIFT_ENTER); // disabled, ignored
     // Ctrl+J still works as submit
     input.send("\n");
-    expect(await promise).toBe("text");
+    expect(await promise).toEqual(["text", null]);
   });
 
   // --- clearAfterSubmit option ---
@@ -1741,7 +1744,8 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.SHIFT_ENTER);
     input.send("line2");
     input.send(KEY.ENTER);
-    const result = await promise;
+    const [result, error] = await promise;
+    expect(error).toBeNull();
     expect(result).toBe("line1\nline2");
     const raw = output.chunks.join("");
     // Should contain the submit-time clear sequence for multi-line input
@@ -1757,27 +1761,27 @@ describe("readMultiline (pipe mode)", () => {
     const input = Readable.from(["line1\nline2\nline3\n"]) as TTYInput;
     input.isTTY = false;
     const { stream } = createNullOutput();
-    expect(await readMultiline({ input, output: stream })).toBe("line1\nline2\nline3");
+    expect(await readMultiline({ input, output: stream })).toEqual(["line1\nline2\nline3", null]);
   });
 
   it("returns input without trailing newline from pipe", async () => {
     const input = Readable.from(["hello\nworld"]) as TTYInput;
     input.isTTY = false;
     const { stream } = createNullOutput();
-    expect(await readMultiline({ input, output: stream })).toBe("hello\nworld");
+    expect(await readMultiline({ input, output: stream })).toEqual(["hello\nworld", null]);
   });
 
   it("returns empty string on immediate EOF from pipe", async () => {
     const input = Readable.from([]) as TTYInput;
     input.isTTY = false;
     const { stream } = createNullOutput();
-    expect(await readMultiline({ input, output: stream })).toBe("");
+    expect(await readMultiline({ input, output: stream })).toEqual(["", null]);
   });
 
   it("handles pipe data split across multiple chunks", async () => {
     const input = Readable.from(["hel", "lo\nwor", "ld"]) as TTYInput;
     input.isTTY = false;
     const { stream } = createNullOutput();
-    expect(await readMultiline({ input, output: stream })).toBe("hello\nworld");
+    expect(await readMultiline({ input, output: stream })).toEqual(["hello\nworld", null]);
   });
 });

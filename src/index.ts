@@ -4,16 +4,23 @@ import { buildHelpFooter, detectKittyProtocol } from "./footer.js";
 import { appendHistory, loadHistory, saveHistory } from "./history.js";
 import { buildKeyMap, onData } from "./input.js";
 import { clearBelowEditor, clearScreen, setFooter, setStatus, tCol, w } from "./rendering.js";
-import type { EditorState, HistoryOptions, ReadMultilineOptions, TTYInput } from "./types.js";
-import { CancelError, EOFError } from "./types.js";
-
-export { CancelError, EOFError } from "./types.js";
+import type {
+  EditorState,
+  HistoryOptions,
+  ReadMultilineOptions,
+  ReadMultilineResult,
+  TTYInput,
+} from "./types.js";
 export type {
+  CancelError,
+  EOFError,
   HelpFooterAction,
   HelpFooterDisplayOptions,
   HistoryOptions,
   ModifiedEnterKey,
+  ReadMultilineError,
   ReadMultilineOptions,
+  ReadMultilineResult,
   TTYInput,
 } from "./types.js";
 
@@ -32,8 +39,8 @@ export type {
  * - Alt+Left/Right: Word jump
  * - Cmd+Left/Right (Home/End): Jump to line start/end
  * - Cmd+Up/Down: Jump to start/end of entire input
- * - Ctrl+C: Cancel (rejects with CancelError)
- * - Ctrl+D: Delete character at cursor (same as Delete key), EOF if empty (rejects with EOFError)
+ * - Ctrl+C: Cancel (returns [null, { kind: "cancel" }])
+ * - Ctrl+D: Delete character at cursor (same as Delete key), EOF if empty (returns [null, { kind: "eof" }])
  * - Ctrl+L: Clear screen and redraw
  * - Ctrl+Z: Undo
  * - Ctrl+Shift+Z / Ctrl+Y: Redo
@@ -44,7 +51,7 @@ export type {
  *
  * For non-TTY input (pipes), reads all lines until EOF.
  */
-export function readMultiline(options: ReadMultilineOptions = {}): Promise<string> {
+export function readMultiline(options: ReadMultilineOptions = {}): Promise<ReadMultilineResult> {
   const {
     prompt = "",
     linePrompt,
@@ -61,14 +68,14 @@ export function readMultiline(options: ReadMultilineOptions = {}): Promise<strin
   return readFromTTY(input, output, prompt, contPrompt, options);
 }
 
-function readFromPipe(input: NodeJS.ReadableStream): Promise<string> {
+function readFromPipe(input: NodeJS.ReadableStream): Promise<ReadMultilineResult> {
   return new Promise((resolve) => {
     let data = "";
     input.on("data", (chunk: Buffer | string) => {
       data += typeof chunk === "string" ? chunk : chunk.toString();
     });
     input.on("end", () => {
-      resolve(data.endsWith("\n") ? data.slice(0, -1) : data);
+      resolve([data.endsWith("\n") ? data.slice(0, -1) : data, null]);
     });
   });
 }
@@ -79,8 +86,8 @@ function readFromTTY(
   prompt: string,
   linePrompt: string,
   options: ReadMultilineOptions,
-): Promise<string> {
-  return new Promise((resolve, reject) => {
+): Promise<ReadMultilineResult> {
+  return new Promise((resolve) => {
     const {
       initialValue,
       history: historyOption,
@@ -209,7 +216,7 @@ function readFromTTY(
         const updated = appendHistory(state.history, result, maxEntries);
         saveHistory(historyConfig.filePath, updated);
       }
-      resolve(result);
+      resolve([result, null]);
     }
 
     function handleEOF() {
@@ -217,7 +224,7 @@ function readFromTTY(
       if (content.length === 0) {
         cleanup();
         w(state, "\n");
-        reject(new EOFError());
+        resolve([null, { kind: "eof", message: "EOF received on empty input" }]);
       } else {
         handleDelete(state);
       }
@@ -226,12 +233,7 @@ function readFromTTY(
     function cancel() {
       cleanup();
       w(state, "\n");
-      if (options.onCancel) {
-        options.onCancel();
-        resolve(state.lines.join("\n"));
-      } else {
-        reject(new CancelError());
-      }
+      resolve([null, { kind: "cancel", message: "Input cancelled" }]);
     }
 
     // Build key map
