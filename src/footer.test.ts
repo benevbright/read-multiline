@@ -30,11 +30,11 @@ describe("buildHelpFooter", () => {
     });
   });
 
-  describe("submitOnEnter: false", () => {
-    it("places submit before newline", () => {
-      const footer = buildHelpFooter({ submitOnEnter: false, columns: 200 });
-      expect(footer).toContain("Enter: newline");
-      expect(footer).toContain("Shift+Enter/Ctrl+J: submit");
+  describe("preferNewlineOnEnter: true", () => {
+    it("Enter=newline, modified keys (minus Ctrl+J) for submit, Ctrl+J for newline", () => {
+      const footer = buildHelpFooter({ preferNewlineOnEnter: true, columns: 200 });
+      expect(footer).toContain("Enter/Ctrl+J: newline");
+      expect(footer).toContain("Shift+Enter/Ctrl+Enter: submit");
       const submitIdx = footer.indexOf("submit");
       const newlineIdx = footer.indexOf("newline");
       expect(submitIdx).toBeLessThan(newlineIdx);
@@ -201,13 +201,13 @@ describe("buildHelpFooter", () => {
       expect(footer).not.toContain("undo");
     });
 
-    it("respects submitOnEnter with custom items order", () => {
+    it("respects preferNewlineOnEnter with custom items order", () => {
       const footer = buildHelpFooter({
         items: ["newline", "submit"],
-        submitOnEnter: false,
+        preferNewlineOnEnter: true,
         columns: 200,
       });
-      expect(footer).toContain("Enter: newline");
+      expect(footer).toContain("Enter/Ctrl+J: newline");
       expect(footer).toContain("submit");
       const newlineIdx = footer.indexOf("newline");
       const submitIdx = footer.indexOf("submit");

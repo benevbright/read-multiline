@@ -27,9 +27,10 @@ export type {
 /**
  * Read multi-line input from the terminal.
  *
- * Key bindings (default, submitOnEnter=true):
+ * Key bindings (default, preferNewlineOnEnter=false):
  * - Enter: Submit input
- * - Shift+Enter / Ctrl+Enter / Cmd+Enter / Alt+Enter / Ctrl+J: Insert newline
+ * - Shift+Enter / Ctrl+Enter / Cmd+Enter / Alt+Enter: Insert newline
+ * - Ctrl+J: Always insert newline (regardless of preferNewlineOnEnter)
  * - Backspace: Delete character (can merge lines)
  * - Delete: Forward delete character (can merge lines)
  * - Ctrl+U: Delete to line start
@@ -51,13 +52,11 @@ export type {
  *
  * For non-TTY input (pipes), reads all lines until EOF.
  */
-export function readMultiline(options: ReadMultilineOptions = {}): Promise<ReadMultilineResult> {
-  const {
-    prompt = "",
-    linePrompt,
-    input = process.stdin as TTYInput,
-    output = process.stdout,
-  } = options;
+export function readMultiline(
+  prompt: string,
+  options?: ReadMultilineOptions,
+): Promise<ReadMultilineResult> {
+  const { linePrompt, input = process.stdin as TTYInput, output = process.stdout } = options ?? {};
 
   const contPrompt = linePrompt ?? prompt;
 
@@ -65,7 +64,7 @@ export function readMultiline(options: ReadMultilineOptions = {}): Promise<ReadM
     return readFromPipe(input);
   }
 
-  return readFromTTY(input, output, prompt, contPrompt, options);
+  return readFromTTY(input, output, prompt, contPrompt, options ?? {});
 }
 
 function readFromPipe(input: NodeJS.ReadableStream): Promise<ReadMultilineResult> {
@@ -96,10 +95,9 @@ function readFromTTY(
       maxLength,
       validate,
       validateDebounceMs = 300,
-      submitOnEnter = true,
+      preferNewlineOnEnter = false,
       disabledKeys = [],
       footer,
-      clearAfterSubmit = true,
       helpFooter = true,
     } = options;
 
@@ -141,7 +139,7 @@ function readFromTTY(
       maxLength,
       validate,
       validateDebounceMs,
-      submitOnEnter,
+      preferNewlineOnEnter,
       disabledKeys: new Set(disabledKeys),
       keyMap: {},
       buffering: false,
@@ -195,22 +193,17 @@ function readFromTTY(
         }
       }
       const result = state.lines.join("\n");
-      if (clearAfterSubmit) {
-        // Clear editor + status + footer in one pass before cleanup
-        // to avoid scroll issues from clearBelowEditor's \r\n
-        if (state.row > 0) w(state, `\x1b[${state.row}A`);
-        w(state, "\r\x1b[J");
-        // Reset state so cleanup's clearBelowEditor is a no-op
-        state.statusText = "";
-        state.statusColor = "";
-        state.footerText = "";
-        state.row = 0;
-        state.col = 0;
-      }
+      // Clear editor + status + footer in one pass before cleanup
+      // to avoid scroll issues from clearBelowEditor's \r\n
+      if (state.row > 0) w(state, `\x1b[${state.row}A`);
+      w(state, "\r\x1b[J");
+      // Reset state so cleanup's clearBelowEditor is a no-op
+      state.statusText = "";
+      state.statusColor = "";
+      state.footerText = "";
+      state.row = 0;
+      state.col = 0;
       cleanup();
-      if (!clearAfterSubmit) {
-        w(state, "\n");
-      }
       if (historyConfig?.filePath) {
         const maxEntries = historyConfig.maxEntries ?? 100;
         const updated = appendHistory(state.history, result, maxEntries);
@@ -282,7 +275,7 @@ function readFromTTY(
       const buildFooterForColumns = (cols: number): string => {
         const helpText = buildHelpFooter({
           ...helpOpts,
-          submitOnEnter,
+          preferNewlineOnEnter: state.preferNewlineOnEnter,
           disabledKeys,
           columns: cols,
         });
@@ -292,8 +285,18 @@ function readFromTTY(
       };
 
       const ttyOut = output as NodeJS.WriteStream;
-      detectKittyProtocol(input, output).then(() => {
+      detectKittyProtocol(input, output).then((kittySupported) => {
         if (!active) return;
+        // Fall back to preferNewlineOnEnter=false when kitty is not supported,
+        // ensuring Enter=submit and Ctrl+J=newline are always available.
+        // Without kitty, modified Enter keys (Shift/Ctrl/Cmd+Enter) don't work,
+        // leaving only Alt+Enter for submit — which requires "Use Option as Meta key"
+        // on macOS Terminal.app and may not work in all environments.
+        if (!kittySupported && state.preferNewlineOnEnter) {
+          state.preferNewlineOnEnter = false;
+          state.keyMap = {};
+          buildKeyMap(state, submit, cancel, handleEOF);
+        }
         const columns = ("columns" in ttyOut && ttyOut.columns) || 80;
         state.rebuildFooter = buildFooterForColumns;
         setFooter(state, buildFooterForColumns(columns));

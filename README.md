@@ -23,7 +23,7 @@ Simple multi-line input reader for Node.js terminals. Solves the limitation of N
 - Non-TTY (pipe) input support
 - Zero dependencies
 
-Best experience with terminals supporting the [kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) (kitty, iTerm2, WezTerm, Ghostty, foot, etc.). Legacy terminals can use **Ctrl+J** as a universal newline/submit fallback.
+Best experience with terminals supporting the [kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) (kitty, iTerm2, WezTerm, Ghostty, foot, etc.). **Ctrl+J** always inserts a newline regardless of settings, serving as a universal fallback in all terminals.
 
 ## Install
 
@@ -34,34 +34,37 @@ pnpm add @toiroakr/read-multiline
 ## Usage
 
 ```typescript
-import { readMultiline, CancelError, EOFError } from "@toiroakr/read-multiline";
+import { readMultiline } from "@toiroakr/read-multiline";
 
-try {
-  const input = await readMultiline({
-    prompt: "> ",
-    linePrompt: "  ",
-    history: { filePath: "./history.json" },
-    maxLines: 10,
-    maxLength: 1000,
-    validate: (v) => (v.trim() === "" ? "Input cannot be empty" : undefined),
-  });
-  console.log("You entered:", input);
-} catch (e) {
-  if (e instanceof CancelError) {
-    console.log("Cancelled");
-  } else if (e instanceof EOFError) {
-    console.log("EOF");
-  }
+const [text, error] = await readMultiline("Enter your message:", {
+  linePrompt: "  ",
+  history: { filePath: "./history.json" },
+  maxLines: 10,
+  maxLength: 1000,
+  validate: (v) => (v.trim() === "" ? "Input cannot be empty" : undefined),
+});
+
+if (error) {
+  console.log(error.kind === "cancel" ? "Cancelled" : "EOF");
+} else {
+  console.log("You entered:", text);
 }
 ```
 
 ## API
 
-### `readMultiline(options?): Promise<string>`
+### `readMultiline(prompt, options?): Promise<ReadMultilineResult>`
+
+#### Parameters
+
+| Parameter | Type     | Description               |
+| --------- | -------- | ------------------------- |
+| `prompt`  | `string` | Prompt for the first line |
+
+#### Options
 
 | Option                   | Type                                             | Default          | Description                                          |
 | ------------------------ | ------------------------------------------------ | ---------------- | ---------------------------------------------------- |
-| `prompt`                 | `string`                                         | `""`             | Prompt for the first line                            |
 | `linePrompt`             | `string`                                         | same as `prompt` | Prompt for continuation lines                        |
 | `input`                  | `TTYInput`                                       | `process.stdin`  | Input stream                                         |
 | `output`                 | `WritableStream`                                 | `process.stdout` | Output stream                                        |
@@ -72,11 +75,14 @@ try {
 | `maxLength`              | `number`                                         | `undefined`      | Maximum total character count                        |
 | `validate`               | `(value: string) => string \| undefined \| null` | `undefined`      | Validation function (return error message to reject) |
 | `validateDebounceMs`     | `number`                                         | `300`            | Debounce interval for live validation                |
-| `submitOnEnter`          | `boolean`                                        | `true`           | `true`: Enter=submit, `false`: Enter=newline         |
+| `preferNewlineOnEnter`   | `boolean`                                        | `false`          | `true`: Enter=newline, `false`: Enter=submit         |
 | `disabledKeys`           | `ModifiedEnterKey[]`                             | `[]`             | Key combos to disable                                |
-| `clearAfterSubmit`       | `boolean`                                        | `true`           | Clear input from terminal after submit               |
 | `footer`                 | `string`                                         | `undefined`      | Fixed footer text below the editor                   |
 | `helpFooter`             | `boolean \| HelpFooterDisplayOptions`            | `true`           | Auto-generated key bindings help footer              |
+
+> **Note:** Ctrl+J (0x0A) always inserts a newline regardless of `preferNewlineOnEnter`.
+> When `preferNewlineOnEnter: true` is set but the kitty keyboard protocol is not supported,
+> the option automatically falls back to `false` to ensure submit (Enter) and newline (Ctrl+J) are always available.
 
 ### Key Bindings
 
@@ -86,16 +92,16 @@ The following table shows all key bindings and their availability across termina
 
 #### Submit / Newline
 
-`submitOnEnter` (default `true`) swaps the action column — Enter gets one role, all modified Enter keys get the other.
+`preferNewlineOnEnter` (default `false`) swaps the role of Enter and modified Enter keys. Ctrl+J always inserts a newline regardless of this setting.
 
-| Key         | Action (`submitOnEnter: true`) | Action (`false`) | Terminal      |
-| ----------- | ------------------------------ | ---------------- | ------------- |
-| Enter       | Submit                         | Newline          | All           |
-| Shift+Enter | Newline                        | Submit           | Kitty         |
-| Ctrl+Enter  | Newline                        | Submit           | Kitty         |
-| Cmd+Enter   | Newline                        | Submit           | Kitty (macOS) |
-| Alt+Enter   | Newline                        | Submit           | All \*        |
-| Ctrl+J      | Newline                        | Submit           | All           |
+| Key         | Action (`preferNewlineOnEnter: false`) | Action (`true`) | Terminal      |
+| ----------- | -------------------------------------- | --------------- | ------------- |
+| Enter       | Submit                                 | Newline         | All           |
+| Shift+Enter | Newline                                | Submit          | Kitty         |
+| Ctrl+Enter  | Newline                                | Submit          | Kitty         |
+| Cmd+Enter   | Newline                                | Submit          | Kitty (macOS) |
+| Alt+Enter   | Newline                                | Submit          | All \*        |
+| Ctrl+J      | Newline                                | Newline         | All           |
 
 \* Alt+Enter requires "Use Option as Meta key" on some macOS terminals.
 
@@ -145,10 +151,10 @@ Use `disabledKeys` to ignore specific key combinations:
 
 ```typescript
 // Disable Ctrl+J (e.g., if it conflicts with your app)
-await readMultiline({ disabledKeys: ["ctrl+j"] });
+await readMultiline("Prompt:", { disabledKeys: ["ctrl+j"] });
 
 // Only allow Shift+Enter and Ctrl+J as newline
-await readMultiline({ disabledKeys: ["ctrl+enter", "cmd+enter", "alt+enter"] });
+await readMultiline("Prompt:", { disabledKeys: ["ctrl+enter", "cmd+enter", "alt+enter"] });
 ```
 
 Valid values: `"shift+enter"`, `"ctrl+enter"`, `"cmd+enter"`, `"alt+enter"`, `"ctrl+j"`
@@ -159,10 +165,10 @@ Pass an array for in-memory history, or a `HistoryOptions` object for file-based
 
 ```typescript
 // In-memory history
-await readMultiline({ history: ["previous input"] });
+await readMultiline("", { history: ["previous input"] });
 
 // File-based persistent history
-await readMultiline({
+await readMultiline("", {
   history: { filePath: "~/.myapp/history.json", maxEntries: 50 },
 });
 ```
@@ -188,10 +194,10 @@ Use `footer` for custom text, `helpFooter` for auto-generated key bindings help:
 
 ```typescript
 // Auto-generated help footer (detects terminal capabilities)
-await readMultiline({ helpFooter: true });
+await readMultiline("", { helpFooter: true });
 
 // Customized help footer
-await readMultiline({
+await readMultiline("", {
   helpFooter: {
     items: ["submit", "newline", "undo"], // Choose actions and order (default: ["submit", "newline", "undo", "cancel", "eof"])
     maxKeysPerAction: 3, // Show up to 3 key alternatives per action (default: 2)
@@ -202,13 +208,13 @@ await readMultiline({
 });
 
 // Custom footer + help footer together
-await readMultiline({
+await readMultiline("", {
   footer: "Type your message below",
   helpFooter: true,
 });
 ```
 
-`helpFooter` automatically detects [kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) support and only shows keys available in the current terminal. The `submitOnEnter` and `disabledKeys` options are inherited, and terminal width is auto-calculated.
+`helpFooter` automatically detects [kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) support and only shows keys available in the current terminal. The `preferNewlineOnEnter` and `disabledKeys` options are inherited, and terminal width is auto-calculated.
 
 ### Validation
 

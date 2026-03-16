@@ -40,20 +40,24 @@ export function buildKeyMap(
 ): void {
   const keyMap = state.keyMap;
 
-  // Enter key: submit or newline based on submitOnEnter
-  const enterAction = state.submitOnEnter ? submit : () => insertNewline(state);
-  const modifiedAction = state.submitOnEnter ? () => insertNewline(state) : submit;
+  // Enter key: submit or newline based on preferNewlineOnEnter
+  const enterAction = state.preferNewlineOnEnter ? () => insertNewline(state) : submit;
+  const modifiedAction = state.preferNewlineOnEnter ? submit : () => insertNewline(state);
 
   keyMap["\r"] = enterAction;
   keyMap["\x1b[13u"] = enterAction; // kitty Enter
 
+  // Ctrl+J: always newline regardless of preferNewlineOnEnter
+  if (!state.disabledKeys.has("ctrl+j")) {
+    keyMap["\n"] = () => insertNewline(state);
+  }
+
   // Modified Enter keys
-  const modifiedEnterKeys: Record<ModifiedEnterKey, string[]> = {
+  const modifiedEnterKeys: Record<Exclude<ModifiedEnterKey, "ctrl+j">, string[]> = {
     "shift+enter": ["\x1b[13;2u"],
     "ctrl+enter": ["\x1b[13;5u"],
     "cmd+enter": ["\x1b[13;9u"],
     "alt+enter": ["\x1b\r", "\x1b[13;3u"],
-    "ctrl+j": ["\n"],
   };
 
   for (const [name, seqs] of Object.entries(modifiedEnterKeys)) {
