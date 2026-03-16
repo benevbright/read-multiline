@@ -19,9 +19,11 @@ while (true) {
     if (error.kind === "cancel") {
       console.log("\n(Cancelled)\n");
       continue;
-    } else {
+    } else if (error.kind === "eof") {
       console.log("\n(EOF: exiting)");
       break;
+    } else {
+      throw new Error(`Unexpected ReadMultilineError kind: ${String((error as any).kind)}`);
     }
   }
 
