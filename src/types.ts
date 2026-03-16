@@ -21,9 +21,6 @@ export type ReadMultilineError = CancelError | EOFError;
 export type ReadMultilineResult = [string, null] | [null, ReadMultilineError];
 
 export interface ReadMultilineOptions {
-  /** Prompt displayed on the first line */
-  prompt?: string;
-
   /** Prompt displayed on continuation lines (2nd line onwards) */
   linePrompt?: string;
 
@@ -64,14 +61,16 @@ export interface ReadMultilineOptions {
   validateDebounceMs?: number;
 
   /**
-   * Whether Enter submits the input (default: true).
-   * - true: Enter=submit, modified Enter (Shift/Ctrl/Cmd/Alt+Enter, Ctrl+J)=newline
-   * - false: Enter=newline, modified Enter=submit
+   * Whether Enter inserts a newline instead of submitting (default: false).
+   * - false: Enter=submit, modified Enter (Shift/Ctrl/Cmd/Alt+Enter)=newline
+   * - true: Enter=newline, modified Enter=submit
    *
-   * Ctrl+J (0x0A) works as a universal fallback in all terminals.
+   * Ctrl+J (0x0A) always inserts a newline regardless of this setting.
    * Shift+Enter, Ctrl+Enter, Cmd+Enter require the kitty keyboard protocol.
+   * When kitty protocol is not supported, this option falls back to false
+   * to ensure Enter=submit and Ctrl+J=newline are always available.
    */
-  submitOnEnter?: boolean;
+  preferNewlineOnEnter?: boolean;
 
   /**
    * Key combinations to disable.
@@ -83,20 +82,13 @@ export interface ReadMultilineOptions {
   footer?: string;
 
   /**
-   * Whether to clear the input from the terminal after submission (default: true).
-   * - true: input is erased from the terminal after submit
-   * - false: input remains visible in the terminal after submit
-   */
-  clearAfterSubmit?: boolean;
-
-  /**
    * Auto-generated help footer showing key bindings.
    * Displayed below the custom footer (if any), after kitty protocol detection completes.
    * - true: show with default options
    * - object: customize display (maxKeysPerAction, maxLines, style, keyStyle)
    *
    * Terminal width (columns) is auto-calculated from the output stream.
-   * submitOnEnter and disabledKeys are inherited from the parent options.
+   * preferNewlineOnEnter and disabledKeys are inherited from the parent options.
    */
   helpFooter?: boolean | HelpFooterDisplayOptions;
 }
@@ -204,7 +196,7 @@ export interface EditorState {
   maxLength: number | undefined;
   validate: ((value: string) => string | undefined | null) | undefined;
   validateDebounceMs: number;
-  submitOnEnter: boolean;
+  preferNewlineOnEnter: boolean;
   disabledKeys: Set<ModifiedEnterKey>;
 
   // Key map (built once during init)

@@ -7,8 +7,8 @@ type StyleTextFormat = Parameters<typeof styleText>[0];
 const DEFAULT_ITEMS: HelpFooterAction[] = ["submit", "newline", "undo", "cancel", "eof"];
 
 interface HelpFooterOptions {
-  /** Whether Enter submits the input (default: true) */
-  submitOnEnter?: boolean;
+  /** Whether Enter inserts a newline instead of submitting (default: false) */
+  preferNewlineOnEnter?: boolean;
   /** Key combinations that are disabled */
   disabledKeys?: ModifiedEnterKey[];
   /** Actions to display and their order (default: ["submit", "newline", "undo", "cancel", "eof"]) */
@@ -132,16 +132,17 @@ function getAvailableModifiedKeys(disabledKeys: Set<ModifiedEnterKey>): Modified
 
 function resolveAction(
   action: HelpFooterAction,
-  submitOnEnter: boolean,
-  modifiedLabels: string[],
+  preferNewlineOnEnter: boolean,
+  submitLabels: string[],
+  newlineLabels: string[],
 ): HelpItem | null {
   switch (action) {
     case "submit":
-      if (submitOnEnter) return { keys: ["Enter"], action: "submit" };
-      return modifiedLabels.length > 0 ? { keys: modifiedLabels, action: "submit" } : null;
+      if (!preferNewlineOnEnter) return { keys: ["Enter"], action: "submit" };
+      return submitLabels.length > 0 ? { keys: submitLabels, action: "submit" } : null;
     case "newline":
-      if (!submitOnEnter) return { keys: ["Enter"], action: "newline" };
-      return modifiedLabels.length > 0 ? { keys: modifiedLabels, action: "newline" } : null;
+      if (preferNewlineOnEnter) return { keys: ["Enter", ...newlineLabels], action: "newline" };
+      return newlineLabels.length > 0 ? { keys: newlineLabels, action: "newline" } : null;
     case "undo":
       return { keys: ["Ctrl+Z"], action: "undo" };
     case "redo":
@@ -171,7 +172,7 @@ function resolveAction(
 
 function buildItems(options: HelpFooterOptions): HelpItem[] {
   const {
-    submitOnEnter = true,
+    preferNewlineOnEnter = false,
     disabledKeys = [],
     maxKeysPerAction = 2,
     items: actions = DEFAULT_ITEMS,
@@ -179,13 +180,21 @@ function buildItems(options: HelpFooterOptions): HelpItem[] {
   const disabled = new Set(disabledKeys);
 
   const available = getAvailableModifiedKeys(disabled);
-  const modifiedLabels = available
+
+  // Ctrl+J is always on the newline side
+  const submitCapableKeys = available.filter((k) => k !== "ctrl+j");
+  const newlineKeys = preferNewlineOnEnter ? available.filter((k) => k === "ctrl+j") : available;
+
+  const submitLabels = submitCapableKeys
+    .slice(0, Math.max(1, maxKeysPerAction))
+    .map((k) => MODIFIED_KEY_LABELS[k]);
+  const newlineLabels = newlineKeys
     .slice(0, Math.max(1, maxKeysPerAction))
     .map((k) => MODIFIED_KEY_LABELS[k]);
 
   const items: HelpItem[] = [];
   for (const action of actions) {
-    const item = resolveAction(action, submitOnEnter, modifiedLabels);
+    const item = resolveAction(action, preferNewlineOnEnter, submitLabels, newlineLabels);
     if (item) items.push(item);
   }
 
