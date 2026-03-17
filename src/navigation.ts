@@ -1,4 +1,11 @@
-import { charAtIndex, charBeforeIndex, charWidth, isWordChar } from "./chars.js";
+import {
+  charAtIndex,
+  charBeforeIndex,
+  charWidth,
+  colFromVisual,
+  isWordChar,
+  visualCol,
+} from "./chars.js";
 import { beginBatch, drawBelowEditor, flushBatch, moveTo, pW, tCol, w } from "./rendering.js";
 import type { EditorState } from "./types.js";
 
@@ -28,17 +35,21 @@ export function moveRight(state: EditorState): void {
   }
 }
 
-/** Move cursor one line up */
+/** Move cursor one line up, preserving visual column position */
 export function moveUp(state: EditorState): void {
   if (state.row > 0) {
-    moveTo(state, state.row - 1, Math.min(state.col, state.lines[state.row - 1].length));
+    const vc = visualCol(state.lines[state.row], state.col);
+    const targetCol = colFromVisual(state.lines[state.row - 1], vc);
+    moveTo(state, state.row - 1, targetCol);
   }
 }
 
-/** Move cursor one line down */
+/** Move cursor one line down, preserving visual column position */
 export function moveDown(state: EditorState): void {
   if (state.row < state.lines.length - 1) {
-    moveTo(state, state.row + 1, Math.min(state.col, state.lines[state.row + 1].length));
+    const vc = visualCol(state.lines[state.row], state.col);
+    const targetCol = colFromVisual(state.lines[state.row + 1], vc);
+    moveTo(state, state.row + 1, targetCol);
   }
 }
 

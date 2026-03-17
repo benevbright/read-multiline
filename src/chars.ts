@@ -47,6 +47,25 @@ export function charBeforeIndex(str: string, index: number): string {
   return str[index - 1];
 }
 
+/** Convert a visual column offset to the corresponding code-unit index in a string */
+export function colFromVisual(str: string, visualCol: number): number {
+  let vis = 0;
+  let i = 0;
+  while (i < str.length) {
+    const ch = charAtIndex(str, i);
+    const cw = charWidth(ch.codePointAt(0)!);
+    if (vis + cw > visualCol) break;
+    vis += cw;
+    i += ch.length;
+  }
+  return i;
+}
+
+/** Get the visual (display) width of a string up to a code-unit index */
+export function visualCol(str: string, col: number): number {
+  return stringWidth(str.slice(0, col));
+}
+
 export function isWordChar(ch: string): boolean {
   if (/\w/.test(ch)) return true;
   // Treat full-width characters (CJK, etc.) as word characters

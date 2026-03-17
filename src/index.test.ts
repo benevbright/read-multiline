@@ -879,6 +879,37 @@ describe("readMultiline (TTY mode)", () => {
     expect(await promise).toEqual(["aX\u{1F600}b", null]);
   });
 
+  it("preserves visual column when moving up between full-width and half-width lines", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    // Line 1: "abcd" (4 half-width chars, visual width 4)
+    input.send("abcd");
+    input.send(KEY.SHIFT_ENTER);
+    // Line 2: "あい" (2 full-width chars, visual width 4)
+    input.send("あい");
+    // Cursor at end of line 2 (col=2, visual=4)
+    // Move up: should land at visual col 4 on line 1 → col=4
+    input.send(KEY.UP);
+    input.send("X"); // insert at col 4 of line 1
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["abcdX\nあい", null]);
+  });
+
+  it("preserves visual column when moving down from half-width to full-width line", async () => {
+    const promise = readMultiline({ input, output: output.stream });
+    // Line 1: "abcd" (visual width 4)
+    input.send("abcd");
+    input.send(KEY.SHIFT_ENTER);
+    // Line 2: "あいう" (visual width 6)
+    input.send("あいう");
+    // Go to end of line 1 (col=4, visual=4)
+    input.send(KEY.UP);
+    // Move down: visual col 4 → "あい" (col=2) on line 2
+    input.send(KEY.DOWN);
+    input.send("X"); // insert at col 2 of line 2
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["abcd\nあいXう", null]);
+  });
+
   // --- Cleanup ---
 
   it("enables and disables bracketed paste mode", async () => {
