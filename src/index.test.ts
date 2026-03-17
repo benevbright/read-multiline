@@ -880,7 +880,7 @@ describe("readMultiline (TTY mode)", () => {
   });
 
   it("preserves visual column when moving up between full-width and half-width lines", async () => {
-    const promise = readMultiline({ input, output: output.stream });
+    const promise = readMultiline("", { input, output: output.stream });
     // Line 1: "abcd" (4 half-width chars, visual width 4)
     input.send("abcd");
     input.send(KEY.SHIFT_ENTER);
@@ -895,7 +895,7 @@ describe("readMultiline (TTY mode)", () => {
   });
 
   it("preserves visual column when moving down from half-width to full-width line", async () => {
-    const promise = readMultiline({ input, output: output.stream });
+    const promise = readMultiline("", { input, output: output.stream });
     // Line 1: "abcd" (visual width 4)
     input.send("abcd");
     input.send(KEY.SHIFT_ENTER);
