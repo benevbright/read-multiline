@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readMultiline, type TTYInput } from "./index.js";
+import { createPrompt, readMultiline, type TTYInput } from "./index.js";
 
 // Dummy output stream that records writes
 function createNullOutput() {
@@ -504,21 +504,24 @@ describe("readMultiline (TTY mode)", () => {
     expect(output.chunks).toContain("\x1b[<u");
   });
 
-  it("displays the prompt", async () => {
-    const promise = readMultiline("> ", {
+  it("displays the prompt header", async () => {
+    const promise = readMultiline("Name:", {
       input,
       output: output.stream,
+      prefix: "> ",
     });
-    expect(output.chunks[0]).toBe("> ");
+    const joined = output.chunks.join("");
+    expect(joined).toContain("> Name:");
     input.send(KEY.ENTER);
     await promise;
   });
 
-  it("displays linePrompt on continuation lines", async () => {
-    const promise = readMultiline("> ", {
+  it("displays linePrefix on continuation lines", async () => {
+    const promise = readMultiline("", {
       input,
       output: output.stream,
-      linePrompt: "... ",
+      prefix: "> ",
+      linePrefix: "... ",
     });
     input.send("a");
     input.send(KEY.SHIFT_ENTER);
@@ -656,9 +659,10 @@ describe("readMultiline (TTY mode)", () => {
   // --- ANSI output correctness ---
 
   it("writes correct ANSI cursor position for full-width characters", async () => {
-    const promise = readMultiline("> ", {
+    const promise = readMultiline("", {
       input,
       output: output.stream,
+      prefix: "> ",
     });
     input.send("\u3042"); // 2-column wide char
     input.send(KEY.LEFT); // should move back 2 columns
@@ -669,10 +673,12 @@ describe("readMultiline (TTY mode)", () => {
     await promise;
   });
 
-  it("writes correct ANSI cursor column with prompt offset on moveTo", async () => {
-    const promise = readMultiline(">>> ", {
+  it("writes correct ANSI cursor column with linePrefix offset on moveTo", async () => {
+    const promise = readMultiline("", {
       input,
       output: output.stream,
+      prefix: ">>> ",
+      // linePrefix defaults to prefix = ">>> " (width 4)
     });
     input.send("ab");
     input.send(KEY.SHIFT_ENTER);
@@ -934,12 +940,13 @@ describe("readMultiline (TTY mode)", () => {
     // and potentially cause errors. This test verifies cleanup completes cleanly.
   });
 
-  // --- linePrompt default ---
+  // --- linePrefix default ---
 
-  it("uses prompt as default linePrompt when linePrompt is not specified", async () => {
-    const promise = readMultiline(">> ", {
+  it("uses prefix as default linePrefix when linePrefix is not specified", async () => {
+    const promise = readMultiline("", {
       input,
       output: output.stream,
+      prefix: ">> ",
     });
     input.send("a");
     input.send(KEY.SHIFT_ENTER);
@@ -1744,7 +1751,7 @@ describe("readMultiline (TTY mode)", () => {
   // --- clear after submit ---
 
   it("clears input from terminal after submit", async () => {
-    const promise = readMultiline("", { input, output: output.stream });
+    const promise = readMultiline("", { prefix: "", input, output: output.stream });
     input.send("hello");
     input.send(KEY.ENTER);
     await promise;
@@ -1758,7 +1765,7 @@ describe("readMultiline (TTY mode)", () => {
   });
 
   it("clears multi-line input after submit", async () => {
-    const promise = readMultiline("", { input, output: output.stream });
+    const promise = readMultiline("", { prefix: "", input, output: output.stream });
     input.send("line1");
     input.send(KEY.SHIFT_ENTER);
     input.send("line2");
@@ -1772,6 +1779,194 @@ describe("readMultiline (TTY mode)", () => {
     expect(clearIdx).toBeGreaterThan(-1);
     const afterClear = raw.slice(clearIdx + "\r\x1b[J".length);
     expect(afterClear).not.toContain("\n");
+  });
+});
+
+// --- cancelRender option ---
+
+describe("cancelRender", () => {
+  let input: TTYInput & EventEmitter & { send: (data: string) => void };
+  let output: ReturnType<typeof createNullOutput>;
+  beforeEach(() => {
+    input = createTTYInput();
+    output = createNullOutput();
+  });
+
+  it("cancelRender default (clear): clears input on Ctrl+C", async () => {
+    const onError = vi.fn();
+    const promise = readMultiline("", { input, output: output.stream, onError });
+    input.send("hello");
+    input.send(KEY.CTRL_C);
+    await promise;
+    const raw = output.chunks.join("");
+    // Should contain clear sequence
+    expect(raw).toContain("\r\x1b[J");
+  });
+
+  it("cancelRender preserve: re-renders with cancelled state on Ctrl+C", async () => {
+    const onError = vi.fn();
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      onError,
+      prefix: { pending: "? ", submitted: "✔ ", cancelled: "✖ " },
+      theme: { cancelRender: "preserve" },
+    });
+    input.send("hello");
+    input.send(KEY.CTRL_C);
+    await promise;
+    const raw = output.chunks.join("");
+    // Should contain the cancelled prefix
+    expect(raw).toContain("✖ ");
+    // Should end with newline (preserve mode)
+    expect(raw.endsWith("\n")).toBe(true);
+  });
+
+  it("cancelRender preserve: applies cancelAnswer style and keeps input visible", async () => {
+    const onError = vi.fn();
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      onError,
+      prefix: { pending: "> ", submitted: "> " },
+      theme: { cancelRender: "preserve", cancelAnswer: "dim" },
+    });
+    input.send("hello");
+    input.send(KEY.CTRL_C);
+    await promise;
+    const raw = output.chunks.join("");
+    // Input text should be present in the re-rendered output
+    expect(raw).toContain("hello");
+    // Should end with newline (preserve mode)
+    expect(raw.endsWith("\n")).toBe(true);
+  });
+
+  it("cancelRender preserve: falls back to pending prefix when cancelled not specified", async () => {
+    const onError = vi.fn();
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      onError,
+      prefix: { pending: "? ", submitted: "✔ " },
+      theme: { cancelRender: "preserve" },
+    });
+    input.send("hello");
+    input.send(KEY.CTRL_C);
+    await promise;
+    const raw = output.chunks.join("");
+    // Should fall back to pending prefix "? "
+    expect(raw).toContain("? ");
+  });
+
+  it("cancelRender preserve: returns cancel error with cancelled prefix rendered", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      prefix: { pending: "? ", submitted: "✔ ", cancelled: "✖ " },
+      theme: { cancelRender: "preserve" },
+    });
+    input.send("hello");
+    input.send(KEY.CTRL_C);
+    const [value, error] = await promise;
+    expect(value).toBeNull();
+    expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
+    const raw = output.chunks.join("");
+    // Should still render with cancelled prefix
+    expect(raw).toContain("✖ ");
+  });
+
+  it("onError: calls callback with error and resolves with [value, error]", async () => {
+    let receivedError: unknown = null;
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      onError: (err) => {
+        receivedError = err;
+      },
+    });
+    input.send("hello");
+    input.send(KEY.CTRL_C);
+    const [value, error] = await promise;
+    expect(receivedError).toEqual({ kind: "cancel", message: "Input cancelled" });
+    expect(value).toBe("hello");
+    expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
+  });
+
+  it("onError: return value overrides error in result tuple", async () => {
+    const customError = { kind: "custom", reason: "user cancelled" };
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      onError: () => customError,
+    });
+    input.send("hello");
+    input.send(KEY.CTRL_C);
+    const [value, error] = await promise;
+    expect(value).toBe("hello");
+    expect(error).toEqual(customError);
+  });
+
+  it("onError: undefined return keeps default CancelError", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      onError: () => undefined,
+    });
+    input.send("hello");
+    input.send(KEY.CTRL_C);
+    const [value, error] = await promise;
+    expect(value).toBe("hello");
+    expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
+  });
+
+  it("onError with cancelRender preserve: renders cancelled state and resolves with value", async () => {
+    let cancelled = false;
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      prefix: { pending: "? ", submitted: "✔ ", cancelled: "✖ " },
+      theme: { cancelRender: "preserve" },
+      onError: () => {
+        cancelled = true;
+      },
+    });
+    input.send("hello");
+    input.send(KEY.CTRL_C);
+    const [value, error] = await promise;
+    expect(cancelled).toBe(true);
+    expect(value).toBe("hello");
+    expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
+    const raw = output.chunks.join("");
+    expect(raw).toContain("✖ ");
+  });
+
+  it("onError: called on EOF (Ctrl+D on empty input)", async () => {
+    let receivedError: unknown = null;
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      onError: (err) => {
+        receivedError = err;
+      },
+    });
+    input.send(KEY.CTRL_D);
+    const [value, error] = await promise;
+    expect(receivedError).toEqual({ kind: "eof", message: "EOF received on empty input" });
+    expect(value).toBe("");
+    expect(error).toEqual({ kind: "eof", message: "EOF received on empty input" });
+  });
+
+  it("onError: EOF return value overrides error", async () => {
+    const customError = { kind: "custom-eof" };
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      onError: () => customError,
+    });
+    input.send(KEY.CTRL_D);
+    const [value, error] = await promise;
+    expect(value).toBe("");
+    expect(error).toEqual(customError);
   });
 });
 
@@ -1805,5 +2000,44 @@ describe("readMultiline (pipe mode)", () => {
     input.isTTY = false;
     const { stream } = createNullOutput();
     expect(await readMultiline("", { input, output: stream })).toEqual(["hello\nworld", null]);
+  });
+});
+
+describe("createPrompt", () => {
+  let input: ReturnType<typeof createTTYInput>;
+  let output: ReturnType<typeof createNullOutput>;
+
+  beforeEach(() => {
+    input = createTTYInput();
+    output = createNullOutput();
+  });
+
+  it("per-call options override shared config", async () => {
+    const ask = createPrompt({ prefix: "shared> ", input, output: output.stream });
+    const promise = ask("", { prefix: "override> " });
+    input.send("hello");
+    input.send(KEY.ENTER);
+    await promise;
+    const raw = output.chunks.join("");
+    expect(raw).toContain("override> ");
+  });
+
+  it("shared config is not mutated by per-call options", async () => {
+    const shared = { prefix: "shared> ", input, output: output.stream };
+    const ask = createPrompt(shared);
+    const promise = ask("", { prefix: "override> " });
+    input.send(KEY.ENTER);
+    await promise;
+    expect(shared.prefix).toBe("shared> ");
+  });
+
+  it("uses shared config when no per-call options given", async () => {
+    const ask = createPrompt({ prefix: "$ ", input, output: output.stream });
+    const promise = ask("");
+    input.send("test");
+    input.send(KEY.ENTER);
+    await promise;
+    const raw = output.chunks.join("");
+    expect(raw).toContain("$ ");
   });
 });
