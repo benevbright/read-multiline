@@ -15,3 +15,5 @@ Add theme/style system, prefix/prompt split, and presets
 - Remove `onError` option (cancel/EOF now always includes partial input in the result tuple)
 - Add `createPrompt()` factory for reusable shared configuration
 - Add `presets.inquirer` / `presets.clack` presets
+- Add `actionStyle` and `separator` to help footer for inline layout support
+- Add inquirer-style inline help footer (bold keys, dim actions, `•` separator)
