@@ -41,6 +41,7 @@ export const clack: SharedConfig = {
     error: `${styleText("yellow", "│")}  `,
   },
   footer: styleText("cyan", "└"),
+  helpFooter: false,
   preferNewlineOnEnter: true,
   theme: {
     answer: "dim",

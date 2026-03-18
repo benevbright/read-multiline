@@ -19,6 +19,10 @@ interface HelpFooterOptions {
   style?: StyleTextFormat;
   /** Style for key labels like "Enter", "Ctrl+Z" (default: none) */
   keyStyle?: StyleTextFormat;
+  /** Style for action descriptions like "submit", "newline" (default: none) */
+  actionStyle?: StyleTextFormat;
+  /** Separator between items (e.g. " • "). When set, items are displayed inline instead of grid layout */
+  separator?: string;
   /** Terminal width for grid layout (default: process.stdout.columns ?? 80) */
   columns?: number;
 }
@@ -199,18 +203,35 @@ function buildItems(options: HelpFooterOptions): HelpItem[] {
   return items;
 }
 
-function formatItem(item: HelpItem, keyStyle?: StyleTextFormat): string {
+function formatItem(
+  item: HelpItem,
+  keyStyle?: StyleTextFormat,
+  actionStyle?: StyleTextFormat,
+  useColon = true,
+): string {
   const keys = item.keys.map((k) => applyStyle(k, keyStyle)).join("/");
-  return `${keys}: ${item.action}`;
+  const action = applyStyle(item.action, actionStyle);
+  return useColon ? `${keys}: ${action}` : `${keys} ${action}`;
 }
 
-function plainItemText(item: HelpItem): string {
-  return `${item.keys.join("/")}: ${item.action}`;
+function plainItemText(item: HelpItem, useColon = true): string {
+  const keys = item.keys.join("/");
+  return useColon ? `${keys}: ${item.action}` : `${keys} ${item.action}`;
+}
+
+function formatInline(
+  items: HelpItem[],
+  keyStyle: StyleTextFormat | undefined,
+  actionStyle: StyleTextFormat | undefined,
+  separator: string,
+): string {
+  return items.map((item) => formatItem(item, keyStyle, actionStyle, false)).join(separator);
 }
 
 function formatGrid(
   items: HelpItem[],
   keyStyle: StyleTextFormat | undefined,
+  actionStyle: StyleTextFormat | undefined,
   termWidth: number,
   maxLines?: number,
 ): string {
@@ -227,7 +248,7 @@ function formatGrid(
     if (maxLines !== undefined && rows.length >= maxLines) break;
     const rowItems = items.slice(i, i + numCols);
     const parts = rowItems.map((item, idx) => {
-      const formatted = formatItem(item, keyStyle);
+      const formatted = formatItem(item, keyStyle, actionStyle);
       if (idx < rowItems.length - 1) {
         const plain = plainItemText(item);
         const pad = colWidth - stringWidth(plain);
@@ -247,10 +268,13 @@ function formatGrid(
  * Uses cached kitty protocol detection results to filter unavailable keys.
  */
 export function buildHelpFooter(options: HelpFooterOptions = {}): string {
-  const { style = "dim", keyStyle, columns, maxLines } = options;
+  const { keyStyle, actionStyle, separator, columns, maxLines } = options;
+  const style = options.style ?? (separator ? undefined : "dim");
   const termWidth = columns ?? (process.stdout.columns || 80);
   const items = buildItems(options);
   if (items.length === 0) return "";
-  const text = formatGrid(items, keyStyle, termWidth, maxLines);
+  const text = separator
+    ? formatInline(items, keyStyle, actionStyle, separator)
+    : formatGrid(items, keyStyle, actionStyle, termWidth, maxLines);
   return applyStyle(text, style);
 }

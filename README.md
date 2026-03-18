@@ -178,6 +178,7 @@ Mimics `@inquirer/prompts` visual style:
 
 - Blue `?` prefix → green `✔` on submit
 - Bold prompt, cyan answer
+- Inline help footer: **Enter** submit • **Shift+Enter** newline
 - `submitRender: "preserve"`, `cancelRender: "preserve"`
 
 #### `presets.clack`
@@ -320,8 +321,10 @@ await readMultiline("", {
     items: ["submit", "newline", "undo"], // Choose actions and order (default: ["submit", "newline", "undo", "cancel", "eof"])
     maxKeysPerAction: 3, // Show up to 3 key alternatives per action (default: 2)
     maxLines: 1, // Limit to 1 line (default: unlimited)
-    style: "dim", // Overall style (default: "dim")
+    style: "dim", // Overall style (default: "dim", or none when separator is set)
     keyStyle: "bold", // Style for key labels
+    actionStyle: "dim", // Style for action descriptions
+    separator: " • ", // Inline layout with separator (default: grid layout)
   },
 });
 

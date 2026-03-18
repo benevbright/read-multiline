@@ -180,6 +180,10 @@ export interface HelpFooterDisplayOptions {
   style?: StyleTextFormat;
   /** Style for key labels like "Enter", "Ctrl+Z" (default: none) */
   keyStyle?: StyleTextFormat;
+  /** Style for action descriptions like "submit", "newline" (default: none) */
+  actionStyle?: StyleTextFormat;
+  /** Separator between items (e.g. " • "). When set, items are displayed inline instead of grid layout */
+  separator?: string;
 }
 
 /** Key combinations that can be used as modified Enter keys. These can be disabled via the disabledKeys option. */
