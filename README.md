@@ -76,8 +76,8 @@ const [input] = await askClack("Enter some text:");
 Returns a `ReadMultilineResult` tuple:
 
 - `[string, null]` on success (submitted input)
-- `[string, { kind: "cancel" }]` on Ctrl+C (includes partial input)
-- `[string, { kind: "eof" }]` on Ctrl+D with empty input
+- `[string, { kind: "cancel", message: "Input cancelled" }]` on Ctrl+C (includes partial input)
+- `[string, { kind: "eof", message: "EOF received on empty input" }]` on Ctrl+D with empty input
 
 | Parameter | Type     | Default | Description                                   |
 | --------- | -------- | ------- | --------------------------------------------- |
@@ -258,10 +258,10 @@ The following table shows all key bindings and their availability across termina
 
 #### Control
 
-| Key    | Action                                                                 | Terminal |
-| ------ | ---------------------------------------------------------------------- | -------- |
-| Ctrl+C | Cancel (returns `[input, { kind: "cancel" }]`)                         | All      |
-| Ctrl+D | Delete at cursor, or EOF if empty (returns `[input, { kind: "eof" }]`) | All      |
+| Key    | Action                                                                          | Terminal |
+| ------ | ------------------------------------------------------------------------------- | -------- |
+| Ctrl+C | Cancel (returns `[input, { kind: "cancel", message }]`)                         | All      |
+| Ctrl+D | Delete at cursor, or EOF if empty (returns `[input, { kind: "eof", message }]`) | All      |
 
 ### Disabling Keys
 

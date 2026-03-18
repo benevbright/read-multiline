@@ -1869,6 +1869,37 @@ describe("cancelRender", () => {
   });
 });
 
+// --- submitRender option ---
+
+describe("submitRender", () => {
+  let input: TTYInput & EventEmitter & { send: (data: string) => void };
+  let output: ReturnType<typeof createNullOutput>;
+  beforeEach(() => {
+    input = createTTYInput();
+    output = createNullOutput();
+  });
+
+  it("submitRender preserve: re-renders with submitted state prefix, linePrefix, and answer style", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      prefix: { pending: "? ", submitted: "✔ " },
+      linePrefix: { pending: "| ", submitted: "  " },
+      theme: { submitRender: "preserve", answer: "cyan" },
+    });
+    input.send("hello");
+    input.send(KEY.ENTER);
+    await promise;
+    const raw = output.chunks.join("");
+    // Should contain the submitted prefix
+    expect(raw).toContain("✔ ");
+    // Should contain the submitted linePrefix followed by input text
+    expect(raw).toContain("  hello");
+    // Should end with newline (preserve mode)
+    expect(raw.endsWith("\n")).toBe(true);
+  });
+});
+
 describe("readMultiline (pipe mode)", () => {
   it("reads all lines until EOF from pipe input", async () => {
     const input = Readable.from(["line1\nline2\nline3\n"]) as TTYInput;
