@@ -116,7 +116,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("partial");
     input.send(KEY.CTRL_C);
     const [value, error] = await promise;
-    expect(value).toBeNull();
+    expect(value).toBe("partial");
     expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
   });
 
@@ -124,7 +124,7 @@ describe("readMultiline (TTY mode)", () => {
     const promise = readMultiline("", { input, output: output.stream });
     input.send(KEY.CTRL_C);
     const [value, error] = await promise;
-    expect(value).toBeNull();
+    expect(value).toBe("");
     expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
   });
 
@@ -142,7 +142,7 @@ describe("readMultiline (TTY mode)", () => {
     const promise = readMultiline("", { input, output: output.stream });
     input.send(KEY.CTRL_D);
     const [value, error] = await promise;
-    expect(value).toBeNull();
+    expect(value).toBe("");
     expect(error).toEqual({ kind: "eof", message: "EOF received on empty input" });
   });
 
@@ -724,7 +724,7 @@ describe("readMultiline (TTY mode)", () => {
     input.send("text");
     input.send("\x1b[99;5u");
     const [value, error] = await promise;
-    expect(value).toBeNull();
+    expect(value).toBe("text");
     expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
   });
 
@@ -741,7 +741,7 @@ describe("readMultiline (TTY mode)", () => {
     const promise = readMultiline("", { input, output: output.stream });
     input.send("\x1b[100;5u");
     const [value, error] = await promise;
-    expect(value).toBeNull();
+    expect(value).toBe("");
     expect(error).toEqual({ kind: "eof", message: "EOF received on empty input" });
   });
 
@@ -934,7 +934,7 @@ describe("readMultiline (TTY mode)", () => {
     await new Promise((r) => setTimeout(r, 80));
     input.send(KEY.CTRL_C);
     const [value, error] = await promise;
-    expect(value).toBeNull();
+    expect(value).toBe("abc");
     expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
     // If escTimer wasn't properly handled, the timer would fire after cleanup
     // and potentially cause errors. This test verifies cleanup completes cleanly.
@@ -1793,8 +1793,7 @@ describe("cancelRender", () => {
   });
 
   it("cancelRender default (clear): clears input on Ctrl+C", async () => {
-    const onError = vi.fn();
-    const promise = readMultiline("", { input, output: output.stream, onError });
+    const promise = readMultiline("", { input, output: output.stream });
     input.send("hello");
     input.send(KEY.CTRL_C);
     await promise;
@@ -1804,11 +1803,9 @@ describe("cancelRender", () => {
   });
 
   it("cancelRender preserve: re-renders with cancelled state on Ctrl+C", async () => {
-    const onError = vi.fn();
     const promise = readMultiline("", {
       input,
       output: output.stream,
-      onError,
       prefix: { pending: "? ", submitted: "✔ ", cancelled: "✖ " },
       theme: { cancelRender: "preserve" },
     });
@@ -1823,11 +1820,9 @@ describe("cancelRender", () => {
   });
 
   it("cancelRender preserve: applies cancelAnswer style and keeps input visible", async () => {
-    const onError = vi.fn();
     const promise = readMultiline("", {
       input,
       output: output.stream,
-      onError,
       prefix: { pending: "> ", submitted: "> " },
       theme: { cancelRender: "preserve", cancelAnswer: "dim" },
     });
@@ -1842,11 +1837,9 @@ describe("cancelRender", () => {
   });
 
   it("cancelRender preserve: falls back to pending prefix when cancelled not specified", async () => {
-    const onError = vi.fn();
     const promise = readMultiline("", {
       input,
       output: output.stream,
-      onError,
       prefix: { pending: "? ", submitted: "✔ " },
       theme: { cancelRender: "preserve" },
     });
@@ -1868,105 +1861,11 @@ describe("cancelRender", () => {
     input.send("hello");
     input.send(KEY.CTRL_C);
     const [value, error] = await promise;
-    expect(value).toBeNull();
+    expect(value).toBe("hello");
     expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
     const raw = output.chunks.join("");
     // Should still render with cancelled prefix
     expect(raw).toContain("✖ ");
-  });
-
-  it("onError: calls callback with error and resolves with [value, error]", async () => {
-    let receivedError: unknown = null;
-    const promise = readMultiline("", {
-      input,
-      output: output.stream,
-      onError: (err) => {
-        receivedError = err;
-      },
-    });
-    input.send("hello");
-    input.send(KEY.CTRL_C);
-    const [value, error] = await promise;
-    expect(receivedError).toEqual({ kind: "cancel", message: "Input cancelled" });
-    expect(value).toBe("hello");
-    expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
-  });
-
-  it("onError: return value overrides error in result tuple", async () => {
-    const customError = { kind: "custom", reason: "user cancelled" };
-    const promise = readMultiline("", {
-      input,
-      output: output.stream,
-      onError: () => customError,
-    });
-    input.send("hello");
-    input.send(KEY.CTRL_C);
-    const [value, error] = await promise;
-    expect(value).toBe("hello");
-    expect(error).toEqual(customError);
-  });
-
-  it("onError: undefined return keeps default CancelError", async () => {
-    const promise = readMultiline("", {
-      input,
-      output: output.stream,
-      onError: () => undefined,
-    });
-    input.send("hello");
-    input.send(KEY.CTRL_C);
-    const [value, error] = await promise;
-    expect(value).toBe("hello");
-    expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
-  });
-
-  it("onError with cancelRender preserve: renders cancelled state and resolves with value", async () => {
-    let cancelled = false;
-    const promise = readMultiline("", {
-      input,
-      output: output.stream,
-      prefix: { pending: "? ", submitted: "✔ ", cancelled: "✖ " },
-      theme: { cancelRender: "preserve" },
-      onError: () => {
-        cancelled = true;
-      },
-    });
-    input.send("hello");
-    input.send(KEY.CTRL_C);
-    const [value, error] = await promise;
-    expect(cancelled).toBe(true);
-    expect(value).toBe("hello");
-    expect(error).toEqual({ kind: "cancel", message: "Input cancelled" });
-    const raw = output.chunks.join("");
-    expect(raw).toContain("✖ ");
-  });
-
-  it("onError: called on EOF (Ctrl+D on empty input)", async () => {
-    let receivedError: unknown = null;
-    const promise = readMultiline("", {
-      input,
-      output: output.stream,
-      onError: (err) => {
-        receivedError = err;
-      },
-    });
-    input.send(KEY.CTRL_D);
-    const [value, error] = await promise;
-    expect(receivedError).toEqual({ kind: "eof", message: "EOF received on empty input" });
-    expect(value).toBe("");
-    expect(error).toEqual({ kind: "eof", message: "EOF received on empty input" });
-  });
-
-  it("onError: EOF return value overrides error", async () => {
-    const customError = { kind: "custom-eof" };
-    const promise = readMultiline("", {
-      input,
-      output: output.stream,
-      onError: () => customError,
-    });
-    input.send(KEY.CTRL_D);
-    const [value, error] = await promise;
-    expect(value).toBe("");
-    expect(error).toEqual(customError);
   });
 });
 

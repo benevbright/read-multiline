@@ -60,10 +60,9 @@ export type ReadMultilineError = CancelError | EOFError;
 /**
  * Result tuple:
  * - `[string, null]` on success
- * - `[null, ReadMultilineError]` on cancel/EOF without `onError`
- * - `[string, unknown]` on cancel/EOF with `onError` (callback return overrides error)
+ * - `[string, ReadMultilineError]` on cancel/EOF (includes partial input)
  */
-export type ReadMultilineResult = [string, null] | [null, ReadMultilineError] | [string, unknown];
+export type ReadMultilineResult = [string, null] | [string, ReadMultilineError];
 
 export interface ReadMultilineOptions {
   /** Prefix displayed before the prompt message (default: "> "). Can be state-dependent. */
@@ -139,14 +138,6 @@ export interface ReadMultilineOptions {
    * @deprecated Use `theme.submitRender` instead ("clear" or "preserve")
    */
   clearAfterSubmit?: boolean;
-
-  /**
-   * Callback invoked on Ctrl+C (cancel) or Ctrl+D on empty input (EOF).
-   * Receives the error as an argument. When provided, the promise resolves
-   * with [value, error] (current input + error) instead of [null, error].
-   * If the callback returns a non-undefined value, it replaces the error in the result tuple.
-   */
-  onError?: (error: ReadMultilineError) => unknown;
 
   /**
    * Auto-generated help footer showing key bindings.

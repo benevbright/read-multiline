@@ -2,15 +2,7 @@ import * as p from "@clack/prompts";
 
 import { createPrompt, presets } from "../src/index.js";
 
-const ask = createPrompt({
-  ...presets.clack,
-  onError: (err) => {
-    if (err.kind === "cancel") {
-      p.cancel("Cancelled.");
-      process.exit(0);
-    }
-  },
-});
+const ask = createPrompt(presets.clack);
 
 async function main() {
   p.intro("Welcome!");

@@ -76,34 +76,32 @@ const [input] = await askClack("Enter some text:");
 Returns a `ReadMultilineResult` tuple:
 
 - `[string, null]` on success (submitted input)
-- `[null, { kind: "cancel" }]` on Ctrl+C (unless `onError` is set)
-- `[null, { kind: "eof" }]` on Ctrl+D with empty input (unless `onError` is set)
-- `[string, error]` when `onError` is set — receives current input and the error
+- `[string, { kind: "cancel" }]` on Ctrl+C (includes partial input)
+- `[string, { kind: "eof" }]` on Ctrl+D with empty input
 
 | Parameter | Type     | Default | Description                                   |
 | --------- | -------- | ------- | --------------------------------------------- |
 | `prompt`  | `string` | `""`    | Prompt message on the header line above input |
 
-| Option                   | Type                                             | Default          | Description                                                                                                          |
-| ------------------------ | ------------------------------------------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `prefix`                 | `Stateful<string>`                               | `"> "`           | Prefix before the prompt message. Can be state-dependent                                                             |
-| `linePrefix`             | `Stateful<string>`                               | same as `prefix` | Prefix for each input line. Can be state-dependent                                                                   |
-| `theme`                  | `PromptTheme`                                    | `undefined`      | Theme for styling prompt elements                                                                                    |
-| `input`                  | `TTYInput`                                       | `process.stdin`  | Input stream                                                                                                         |
-| `output`                 | `WritableStream`                                 | `process.stdout` | Output stream                                                                                                        |
-| `initialValue`           | `string`                                         | `undefined`      | Pre-populate the input                                                                                               |
-| `history`                | `string[] \| HistoryOptions`                     | `[]`             | History entries or file-based persistent history                                                                     |
-| `historyArrowNavigation` | `"single" \| "double" \| "disabled"`             | `"single"`       | How Up/Down interacts with history at boundaries                                                                     |
-| `maxLines`               | `number`                                         | `undefined`      | Maximum number of lines                                                                                              |
-| `maxLength`              | `number`                                         | `undefined`      | Maximum total character count                                                                                        |
-| `validate`               | `(value: string) => string \| undefined \| null` | `undefined`      | Validation function (return error message to reject)                                                                 |
-| `validateDebounceMs`     | `number`                                         | `300`            | Debounce interval for live validation                                                                                |
-| `preferNewlineOnEnter`   | `boolean`                                        | `false`          | `true`: Enter=newline, `false`: Enter=submit                                                                         |
-| `disabledKeys`           | `ModifiedEnterKey[]`                             | `[]`             | Key combos to disable                                                                                                |
-| `clearAfterSubmit`       | `boolean`                                        | `true`           | **Deprecated.** Clear input from terminal after submit. Use `theme.submitRender` instead                             |
-| `onError`                | `(error: ReadMultilineError) => unknown`         | `undefined`      | Error callback (Ctrl+C / Ctrl+D). Resolves `[value, error]` instead of `[null, error]`. Return value overrides error |
-| `footer`                 | `string`                                         | `undefined`      | Fixed footer text below the editor                                                                                   |
-| `helpFooter`             | `boolean \| HelpFooterDisplayOptions`            | `true`           | Auto-generated key bindings help footer                                                                              |
+| Option                   | Type                                             | Default          | Description                                                                              |
+| ------------------------ | ------------------------------------------------ | ---------------- | ---------------------------------------------------------------------------------------- |
+| `prefix`                 | `Stateful<string>`                               | `"> "`           | Prefix before the prompt message. Can be state-dependent                                 |
+| `linePrefix`             | `Stateful<string>`                               | same as `prefix` | Prefix for each input line. Can be state-dependent                                       |
+| `theme`                  | `PromptTheme`                                    | `undefined`      | Theme for styling prompt elements                                                        |
+| `input`                  | `TTYInput`                                       | `process.stdin`  | Input stream                                                                             |
+| `output`                 | `WritableStream`                                 | `process.stdout` | Output stream                                                                            |
+| `initialValue`           | `string`                                         | `undefined`      | Pre-populate the input                                                                   |
+| `history`                | `string[] \| HistoryOptions`                     | `[]`             | History entries or file-based persistent history                                         |
+| `historyArrowNavigation` | `"single" \| "double" \| "disabled"`             | `"single"`       | How Up/Down interacts with history at boundaries                                         |
+| `maxLines`               | `number`                                         | `undefined`      | Maximum number of lines                                                                  |
+| `maxLength`              | `number`                                         | `undefined`      | Maximum total character count                                                            |
+| `validate`               | `(value: string) => string \| undefined \| null` | `undefined`      | Validation function (return error message to reject)                                     |
+| `validateDebounceMs`     | `number`                                         | `300`            | Debounce interval for live validation                                                    |
+| `preferNewlineOnEnter`   | `boolean`                                        | `false`          | `true`: Enter=newline, `false`: Enter=submit                                             |
+| `disabledKeys`           | `ModifiedEnterKey[]`                             | `[]`             | Key combos to disable                                                                    |
+| `clearAfterSubmit`       | `boolean`                                        | `true`           | **Deprecated.** Clear input from terminal after submit. Use `theme.submitRender` instead |
+| `footer`                 | `string`                                         | `undefined`      | Fixed footer text below the editor                                                       |
+| `helpFooter`             | `boolean \| HelpFooterDisplayOptions`            | `true`           | Auto-generated key bindings help footer                                                  |
 
 ### Layout
 
@@ -260,10 +258,10 @@ The following table shows all key bindings and their availability across termina
 
 #### Control
 
-| Key    | Action                                                                                                         | Terminal |
-| ------ | -------------------------------------------------------------------------------------------------------------- | -------- |
-| Ctrl+C | Cancel (returns `[null, { kind: "cancel" }]`, or `[value, error]` if `onError` is set)                         | All      |
-| Ctrl+D | Delete at cursor, or EOF if empty (returns `[null, { kind: "eof" }]`, or `[value, error]` if `onError` is set) | All      |
+| Key    | Action                                                                 | Terminal |
+| ------ | ---------------------------------------------------------------------- | -------- |
+| Ctrl+C | Cancel (returns `[input, { kind: "cancel" }]`)                         | All      |
+| Ctrl+D | Delete at cursor, or EOF if empty (returns `[input, { kind: "eof" }]`) | All      |
 
 ### Disabling Keys
 

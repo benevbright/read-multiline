@@ -11,6 +11,7 @@ Add theme/style system, prefix/prompt split, and presets
 - Add error visual state: dynamically switch prefix/linePrefix on validation failure
 - Add `submitRender: 'preserve'` to re-render with submitted-state styles
 - Add `cancelRender: 'preserve'` to re-render with cancelled-state styles
-- Add `onError` callback (resolves `[value, error]` on cancel/EOF, return value overrides error)
+- Change `ReadMultilineResult` cancel/EOF to return `[string, ReadMultilineError]` instead of `[null, ReadMultilineError]`
+- Remove `onError` option (cancel/EOF now always includes partial input in the result tuple)
 - Add `createPrompt()` factory for reusable shared configuration
 - Add `presets.inquirer` / `presets.clack` presets

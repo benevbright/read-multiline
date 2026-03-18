@@ -83,8 +83,8 @@ export function createPrompt(
  * - Alt+Left/Right: Word jump
  * - Cmd+Left/Right (Home/End): Jump to line start/end
  * - Cmd+Up/Down: Jump to start/end of entire input
- * - Ctrl+C: Cancel (returns [null, { kind: "cancel" }], or [input, error] if onError is set)
- * - Ctrl+D: Delete character at cursor (same as Delete key), EOF if empty (returns [null, { kind: "eof" }], or [input, error] if onError is set)
+ * - Ctrl+C: Cancel (returns [input, { kind: "cancel" }])
+ * - Ctrl+D: Delete character at cursor (same as Delete key), EOF if empty (returns [input, { kind: "eof" }])
  * - Ctrl+L: Clear screen and redraw
  * - Ctrl+Z: Undo
  * - Ctrl+Shift+Z / Ctrl+Y: Redo
@@ -291,14 +291,8 @@ function readFromTTY(
       resolve([result, null]);
     }
 
-    function resolveWithError(defaultError: ReadMultilineError): void {
-      if (options.onError) {
-        const result = options.onError(defaultError);
-        const error = result ?? defaultError;
-        resolve([state.lines.join("\n"), error] as ReadMultilineResult);
-      } else {
-        resolve([null, defaultError]);
-      }
+    function resolveWithError(error: ReadMultilineError): void {
+      resolve([state.lines.join("\n"), error]);
     }
 
     function handleEOF() {
