@@ -79,9 +79,9 @@ Returns a `ReadMultilineResult` tuple:
 - `[string, { kind: "cancel", message: "Input cancelled" }]` on Ctrl+C (includes partial input)
 - `[string, { kind: "eof", message: "EOF received on empty input" }]` on Ctrl+D with empty input
 
-| Parameter | Type     | Default | Description                                   |
-| --------- | -------- | ------- | --------------------------------------------- |
-| `prompt`  | `string` | `""`    | Prompt message on the header line above input |
+| Parameter | Type     | Description                                                       |
+| --------- | -------- | ----------------------------------------------------------------- |
+| `prompt`  | `string` | Prompt message on the header line above input (pass `""` to hide) |
 
 | Option                   | Type                                             | Default          | Description                                                                              |
 | ------------------------ | ------------------------------------------------ | ---------------- | ---------------------------------------------------------------------------------------- |
