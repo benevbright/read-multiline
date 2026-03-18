@@ -22,13 +22,12 @@ export function charWidth(code: number): number {
 
 /** Returns the terminal display width of a string, ignoring ANSI escape sequences */
 export function stringWidth(str: string): number {
-  // Strip ANSI escape sequences: CSI (final byte @-~), OSC (BEL or ST terminated), simple ESC
-  const stripped = str.replace(
-    /\x1b\[[0-9;]*[@-~]|\x1b\](?:[^\x07\x1b]*(?:\x07|\x1b\\))|\x1b[^[\]]/g,
-    "",
-  );
+  // Fast path: skip regex when no escape sequences are present
+  const source = str.includes("\x1b")
+    ? str.replace(/\x1b\[[0-9;]*[@-~]|\x1b\](?:[^\x07\x1b]*(?:\x07|\x1b\\))|\x1b[^[\]]/g, "")
+    : str;
   let width = 0;
-  for (const ch of stripped) {
+  for (const ch of source) {
     width += charWidth(ch.codePointAt(0)!);
   }
   return width;
