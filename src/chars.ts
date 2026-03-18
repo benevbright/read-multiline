@@ -24,7 +24,7 @@ export function charWidth(code: number): number {
 export function stringWidth(str: string): number {
   // Fast path: skip regex when no escape sequences are present
   const source = str.includes("\x1b")
-    ? str.replace(/\x1b\[[0-9;]*[@-~]|\x1b\](?:[^\x07\x1b]*(?:\x07|\x1b\\))|\x1b[^[\]]/g, "")
+    ? str.replace(/\x1b\[[0-9;?]*[@-~]|\x1b\](?:[^\x07\x1b]*(?:\x07|\x1b\\))|\x1b[^[\]]/g, "")
     : str;
   let width = 0;
   for (const ch of source) {

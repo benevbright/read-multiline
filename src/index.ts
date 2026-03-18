@@ -298,8 +298,16 @@ function readFromTTY(
     function handleEOF() {
       const content = state.lines.join("\n");
       if (content.length === 0) {
+        if (cancelRender === "preserve") {
+          renderStateChange(state, theme, "cancelled");
+        } else {
+          clearEditorArea();
+        }
+
         cleanup();
-        w(state, "\n");
+        if (cancelRender !== "clear") {
+          w(state, "\n");
+        }
         resolveWithError({ kind: "eof", message: "EOF received on empty input" });
       } else {
         handleDelete(state);
