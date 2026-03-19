@@ -59,12 +59,12 @@ function renderLine(state: EditorState, rowIndex: number): string {
 
 This ensures consistent highlight application across all rendering paths:
 
-1. **`redrawFrom()`** — multi-line redraw (newline, line merge, auto-indent 3-line operations)
+1. **`redrawFrom()`** — multi-line redraw (newline, line merge, transform-triggered multi-line changes)
 2. **`clearScreen()`** — full redraw
 3. **`restoreSnapshot()`** — full redraw after undo/redo
 4. **`insertChar()`** — switches to full-line redraw when highlighting is enabled
 
-**Important**: When auto-indent triggers a 3-line operation on newline inside brackets (modify original line + insert indented line + insert closing bracket line), this goes through the `insertNewline()` → `redrawFrom()` path. As long as `renderLine()` is used within `redrawFrom()`, highlight support is automatically provided. Full-line redraw in `insertChar()` alone is **not sufficient** — highlight support in `redrawFrom()` is **essential**.
+**Important**: Transform (Phase 2) may produce multi-line changes (e.g., bracket auto-indent: 3-line operation). These go through `redrawFrom()`. As long as `renderLine()` is used within `redrawFrom()`, highlight support is automatically provided. Full-line redraw in `insertChar()` alone is **not sufficient** — highlight support in `redrawFrom()` is **essential**.
 
 **Files changed**: `rendering.ts`, `editing.ts`
 
@@ -76,84 +76,156 @@ Since highlighted text contains ANSI codes, cursor position calculation continue
 
 ---
 
-## Phase 2: Auto Editing
+## Phase 2: Transform — Unified Auto Editing
 
-### 2-1. Auto-Close Brackets
+### 2-1. Design Philosophy
 
-**Goal**: When `(` is typed, `)` is automatically inserted and the cursor is placed between the brackets.
+Instead of individual features (`autoPairs`, `indent`), provide a **single `transform` callback** that receives the full editor state after each edit and can replace the entire content with cursor repositioning. This gives users complete control to implement any auto-editing behavior.
 
-```ts
-// Add to types.ts
-interface ReadMultilineOptions {
-  /**
-   * Array of bracket pairs for auto-completion.
-   * Default: none (auto-completion disabled)
-   * Example: [["(", ")"], ["[", "]"], ["{", "}"], ["\"", "\""], ["'", "'"]]
-   */
-  autoPairs?: [string, string][];
-}
-```
-
-**Implementation approach**:
-- In `insertChar()` in `editing.ts`, when the input character matches an opening character in `autoPairs`, also insert the closing character
-- When the cursor is immediately before a closing character and that closing character is typed, skip insertion and move cursor one position right (overtype)
-- When backspace deletes an opening bracket and the corresponding closing bracket immediately follows, delete both
-
-**Files changed**: `types.ts`, `editing.ts`, `index.ts`
-
-### 2-2. Auto-Indent on Newline
-
-**Goal**: Automatically inherit the previous line's indentation when inserting a newline.
+### 2-2. API
 
 ```ts
 // Add to types.ts
 interface ReadMultilineOptions {
   /**
-   * Indent function called on newline.
-   * Receives the current line content and cursor position, returns the indent string to insert.
-   * Default: none (auto-indent disabled)
+   * Called after each edit operation. Receives the current editor content,
+   * cursor position, and what edit just occurred. Return a new state to
+   * transform the content, or undefined to leave it unchanged.
    *
-   * Example (inherit previous line's indent):
-   * (line) => line.match(/^(\s*)/)?.[1] ?? ""
-   *
-   * Example (increase indent after {):
-   * (line, col) => {
-   *   const indent = line.match(/^(\s*)/)?.[1] ?? "";
-   *   const beforeCursor = line.slice(0, col);
-   *   return beforeCursor.trimEnd().endsWith("{") ? indent + "  " : indent;
-   * }
+   * The returned lines/row/col completely replace the editor state.
+   * Undo captures the state before the base edit + transform as one unit.
    */
-  indent?: (line: string, col: number) => string;
+  transform?: (
+    state: { lines: string[]; row: number; col: number },
+    event: TransformEvent,
+  ) => { lines: string[]; row: number; col: number } | undefined;
+}
+
+type TransformEvent =
+  | { type: "insert"; char: string }   // character inserted
+  | { type: "newline" }                 // newline inserted
+  | { type: "backspace" }              // backspace pressed
+  | { type: "delete" };                // delete pressed
+```
+
+### 2-3. Usage Examples
+
+```ts
+readMultiline("> ", {
+  transform(state, event) {
+    const { lines, row, col } = state;
+    const line = lines[row];
+
+    // Auto-close brackets: ( → ()
+    if (event.type === "insert") {
+      const pairs: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+      const close = pairs[event.char];
+      if (close) {
+        const newLine = line.slice(0, col) + close + line.slice(col);
+        return { lines: lines.with(row, newLine), row, col };
+      }
+      // Overtype closing bracket
+      if (")]}".includes(event.char) && line[col] === event.char) {
+        // Remove the duplicate and keep cursor where it is
+        const newLine = line.slice(0, col - 1) + line.slice(col);
+        return { lines: lines.with(row, newLine), row, col: col - 1 };
+        // Actually: char was already inserted, so line[col] check is on post-insert state
+      }
+    }
+
+    // Auto-indent + bracket newline: { + Enter → 3-line expansion
+    if (event.type === "newline") {
+      const prevLine = lines[row - 1];
+      const indent = prevLine.match(/^(\s*)/)?.[1] ?? "";
+      if (prevLine.trimEnd().endsWith("{") && line.trimStart().startsWith("}")) {
+        // 3-line operation: {, indented cursor, }
+        const newLines = [...lines];
+        newLines[row] = indent + "  ";
+        newLines.splice(row + 1, 0, indent + line.trimStart());
+        return { lines: newLines, row, col: indent.length + 2 };
+      }
+      // Simple indent inheritance
+      if (indent && !line.startsWith(indent)) {
+        return { lines: lines.with(row, indent + line), row, col: indent.length + col };
+      }
+    }
+  },
+});
+```
+
+### 2-4. Implementation
+
+**Call site**: After each edit operation in `editing.ts`, call `applyTransform()`:
+
+```ts
+function applyTransform(
+  state: EditorState,
+  event: TransformEvent,
+): void {
+  if (!state.transform) return;
+
+  const oldLines = [...state.lines];
+  const result = state.transform(
+    { lines: [...state.lines], row: state.row, col: state.col },
+    event,
+  );
+  if (!result) return;
+
+  // Apply the new state
+  state.lines.length = 0;
+  state.lines.push(...result.lines);
+
+  // Find first changed line to minimize redraw
+  let fromRow = 0;
+  while (fromRow < oldLines.length && fromRow < state.lines.length
+    && oldLines[fromRow] === state.lines[fromRow]) {
+    fromRow++;
+  }
+
+  // If lines or content changed, redraw from the first difference
+  if (fromRow < state.lines.length || fromRow < oldLines.length) {
+    redrawFrom(state, fromRow, result.row, result.col);
+  } else if (result.row !== state.row || result.col !== state.col) {
+    moveTo(state, result.row, result.col);
+  }
 }
 ```
 
-**Implementation approach**:
-- In `insertNewline()` in `editing.ts`, insert the return value of `indent()` at the beginning of the new line after the newline
-- **3-line operation on newline inside brackets**: When combined with `autoPairs`, if the cursor is between an opening and closing bracket (e.g., `func(|)`) and Enter is pressed:
-  1. Split the original line (up to `func(`)
-  2. Insert a new line with indentation (cursor goes here)
-  3. Place the closing bracket on the next line with reduced indentation
-  ```
-  // Before: func(|)
-  // After:
-  func(
-      |          ← cursor (indentation computed by indent())
-  )              ← original indentation level
-  ```
-  - This operation is performed within `insertNewline()`, ultimately calling `redrawFrom(state, row, row + 1, indent.length)`
-  - Since `redrawFrom()` uses `renderLine()` for highlighted rendering, compatibility with Phase 1's highlight implementation is automatically ensured
+**Edit points** — add `applyTransform()` call after each operation:
+- `insertChar()` → `applyTransform(state, { type: "insert", char: ch })`
+- `insertNewline()` → `applyTransform(state, { type: "newline" })`
+- `handleBackspace()` → `applyTransform(state, { type: "backspace" })`
+- `handleDelete()` → `applyTransform(state, { type: "delete" })`
+
+**Undo integration**: `saveUndo()` is called _before_ the base edit. The transform is applied after the base edit. This means undo restores to the state before both the base edit and the transform — correct single-unit undo.
+
+**Paste handling**: During paste (`state.isPasting`), skip transform calls. Auto-pairs and auto-indent should not trigger on pasted content. The `isPasting` flag already exists.
 
 **Files changed**: `types.ts`, `editing.ts`, `index.ts`
+
+### 2-5. Rendering Integration
+
+Transform may produce changes ranging from single-character adjustments to multi-line operations. The rendering approach:
+
+1. **Diff `oldLines` vs `state.lines`**: Find the first differing row
+2. **`redrawFrom(fromRow, ...)`**: Redraw from that row onward — reuses existing infrastructure
+3. **`renderLine()` in `redrawFrom()`** (from Phase 1): Highlighting is automatically applied
+
+This means **no special rendering code is needed for transform**. The existing `redrawFrom()` + `renderLine()` handles all cases:
+- Single-line change (auto-close bracket) → `fromRow` = current row, redraws 1 line + below
+- Multi-line change (bracket auto-indent) → `fromRow` = modified row, redraws all affected lines
 
 ---
 
 ## Phase 3: Integration and Optimization
 
-### 3-1. Highlight + Auto Editing Integration Tests
+### 3-1. Integration Tests
 
-- Verify auto-close/auto-indent works correctly when highlighting is enabled
-- Verify undo/redo correctly handles pair insertion (pair insertion is a single undo unit)
-- Disable auto-close during paste (leverage existing `isPasting` flag)
+- Verify transform works correctly when highlighting is enabled (both features compose)
+- Verify undo/redo restores state before base edit + transform as one unit
+- Verify transform is skipped during paste (`isPasting`)
+- Verify transform returning `undefined` is a no-op (no unnecessary redraw)
+- Verify multi-line transform (e.g., 3-line bracket expansion) renders correctly
 
 ### 3-2. Performance Considerations
 
@@ -174,13 +246,21 @@ interface ReadMultilineOptions {
    - **Note**: If `highlight(line, lineIndex)` performs line-number-dependent decoration, the cache key must include the line number. However, typical syntax highlighting is line-number-independent, so by default only line content is used as the key. Provide an option to disable caching when line-number-dependent behavior is needed.
 
 2. **Minimize redraw scope**:
-   - `insertChar()`: Even with highlighting enabled, redraw **only the current line** (single-line redraw, not `redrawFrom()`)
-   - `redrawFrom()`: Redraw from the changed line onward (same as current behavior). Even for auto-indent 3-line operations, only from `fromRow` onward
+   - `insertChar()` (no transform): Even with highlighting enabled, redraw **only the current line** (single-line redraw, not `redrawFrom()`)
+   - `insertChar()` + transform single-line change: `redrawFrom()` from the current row — effectively 1 line
+   - `redrawFrom()`: Redraw from the changed line onward (same as current behavior). Transform's diff-based `fromRow` ensures only affected lines are redrawn
    - **Skip unchanged lines**: Consider skipping redraw of lines in `redrawFrom()` whose content hasn't changed before and after the edit (trade-off with cursor movement cost)
 
 3. **Flicker prevention**:
    - Buffer output with `beginBatch()`/`flushBatch()` (leverage existing infrastructure)
    - Consider `\x1b[?2026h` (synchronized output) before outputting highlighted text (depends on terminal support)
+
+#### Transform Performance
+
+- `applyTransform()` diffs old vs new lines to find the first changed row — O(n) string comparisons where n = number of lines
+- For typical inputs (< 100 lines), this is negligible
+- Transform receives a copy of `lines` array (`[...state.lines]`) to prevent accidental mutation — small allocation cost per edit, acceptable for interactive input
+- If transform returns `undefined` (no change), no rendering occurs — zero cost path
 
 #### `insertChar()` Performance
 
@@ -202,12 +282,11 @@ Changes near the end of the file require redrawing few lines, but changes near t
 
 | Step | Content | Scope |
 |------|---------|-------|
-| **Step 1** | `highlight` option + rendering support | `types.ts`, `rendering.ts`, `editing.ts`, `index.ts`, `chars.ts` |
-| **Step 2** | `autoPairs` option (auto-close brackets) | `types.ts`, `editing.ts`, `index.ts` |
-| **Step 3** | `indent` option (auto-indent) | `types.ts`, `editing.ts`, `index.ts` |
-| **Step 4** | Add tests | `editing.test.ts` etc. |
+| **Step 1** | `highlight` option + `renderLine()` + rendering support | `types.ts`, `rendering.ts`, `editing.ts`, `index.ts`, `chars.ts` |
+| **Step 2** | `transform` option + `applyTransform()` + rendering integration | `types.ts`, `editing.ts`, `index.ts` |
+| **Step 3** | Add tests | `editing.test.ts` etc. |
 
-Each step can be released independently. Step 1 has the widest impact; Steps 2/3 are relatively localized changes.
+Step 1 has the widest impact (all rendering paths). Step 2 is localized to edit call sites + one new function. Each step can be released independently.
 
 ---
 
@@ -218,13 +297,10 @@ readMultiline("> ", {
   // Syntax highlighting
   highlight: (line, index) => highlightJS(line),
 
-  // Auto-close brackets
-  autoPairs: [["(", ")"], ["[", "]"], ["{", "}"], ["\"", "\""]],
-
-  // Auto-indent
-  indent: (line, col) => {
-    const base = line.match(/^(\s*)/)?.[1] ?? "";
-    return line.slice(0, col).trimEnd().endsWith("{") ? base + "  " : base;
+  // Auto editing (auto-pairs + auto-indent + any custom behavior)
+  transform(state, event) {
+    // User implements whatever auto-editing logic they need.
+    // Return { lines, row, col } to replace state, or undefined for no-op.
   },
 });
 ```
