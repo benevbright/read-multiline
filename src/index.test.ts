@@ -1900,6 +1900,41 @@ describe("submitRender", () => {
   });
 });
 
+// --- error visual state ---
+
+describe("error visual state", () => {
+  let input: TTYInput & EventEmitter & { send: (data: string) => void };
+  let output: ReturnType<typeof createNullOutput>;
+  beforeEach(() => {
+    input = createTTYInput();
+    output = createNullOutput();
+  });
+
+  it("switches prefix/linePrefix to error state on validation failure", async () => {
+    const promise = readMultiline("msg", {
+      input,
+      output: output.stream,
+      prefix: { pending: "? ", submitted: "✔ ", error: "! " },
+      linePrefix: { pending: "| ", submitted: "  ", error: "x " },
+      validate: (v) => (v.length < 3 ? "Too short" : undefined),
+    });
+    input.send("ab");
+    input.send(KEY.ENTER); // validation fails → error state
+
+    // Wait for the visual state change to render
+    await new Promise((r) => setTimeout(r, 50));
+
+    const rawAfterError = output.chunks.join("");
+    // Error-state prefix and linePrefix should appear after validation failure
+    expect(rawAfterError).toContain("! ");
+    expect(rawAfterError).toContain("x ");
+
+    input.send("c"); // now "abc"
+    input.send(KEY.ENTER); // validation passes
+    expect(await promise).toEqual(["abc", null]);
+  });
+});
+
 describe("readMultiline (pipe mode)", () => {
   it("reads all lines until EOF from pipe input", async () => {
     const input = Readable.from(["line1\nline2\nline3\n"]) as TTYInput;

@@ -134,19 +134,19 @@ prefix: {
 
 ### `PromptTheme`
 
-| Property       | Type                        | Description                                         |
-| -------------- | --------------------------- | --------------------------------------------------- |
-| `prefix`       | `Stateful<StyleTextFormat>` | Style for the prefix text                           |
-| `linePrefix`   | `Stateful<StyleTextFormat>` | Style for the line prefix text                      |
-| `prompt`       | `StyleTextFormat`           | Style for the prompt message                        |
-| `input`        | `StyleTextFormat`           | Style for user input text while editing             |
-| `answer`       | `StyleTextFormat`           | Style for the answer text after submission          |
-| `cancelAnswer` | `StyleTextFormat`           | Style for the answer text after cancellation        |
-| `submitRender` | `"clear" \| "preserve"`     | How to render after submission (default: `"clear"`) |
-| `cancelRender` | `"clear" \| "preserve"`     | How to render after Ctrl+C (default: `"clear"`)     |
-| `error`        | `StyleTextFormat`           | Style for validation error messages                 |
-| `success`      | `StyleTextFormat`           | Style for validation success messages               |
-| `footer`       | `StyleTextFormat`           | Style for footer text                               |
+| Property       | Type                        | Description                                            |
+| -------------- | --------------------------- | ------------------------------------------------------ |
+| `prefix`       | `Stateful<StyleTextFormat>` | Style for the prefix text                              |
+| `linePrefix`   | `Stateful<StyleTextFormat>` | Style for the line prefix text                         |
+| `prompt`       | `StyleTextFormat`           | Style for the prompt message                           |
+| `input`        | `StyleTextFormat`           | Style for user input text while editing                |
+| `answer`       | `StyleTextFormat`           | Style for the answer text after submission             |
+| `cancelAnswer` | `StyleTextFormat`           | Style for the answer text after cancellation           |
+| `submitRender` | `"clear" \| "preserve"`     | How to render after submission (default: `"clear"`)    |
+| `cancelRender` | `"clear" \| "preserve"`     | How to render after Ctrl+C or EOF (default: `"clear"`) |
+| `error`        | `StyleTextFormat`           | Style for validation error messages                    |
+| `success`      | `StyleTextFormat`           | Style for validation success messages                  |
+| `footer`       | `StyleTextFormat`           | Style for footer text                                  |
 
 `StyleTextFormat` is the format parameter of Node.js's `util.styleText()` — e.g. `"bold"`, `"red"`, `"cyan"`, `["strikethrough", "dim"]`.
 

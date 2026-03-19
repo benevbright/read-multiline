@@ -28,7 +28,7 @@ export interface PromptTheme {
   submitRender?: "clear" | "preserve";
 
   /**
-   * How to render the prompt after cancellation (Ctrl+C).
+   * How to render the prompt after cancellation (Ctrl+C) or EOF (Ctrl+D on empty input).
    * - "clear": erase the prompt and input from the terminal (default)
    * - "preserve": re-render with cancelled-state prefix/linePrefix and styles
    */
