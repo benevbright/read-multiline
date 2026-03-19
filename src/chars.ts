@@ -1,3 +1,5 @@
+import { stripVTControlCharacters } from "node:util";
+
 /** Returns the terminal display width of a character (full-width=2, half-width=1) */
 export function charWidth(code: number): number {
   if (code < 32) return 0;
@@ -20,14 +22,11 @@ export function charWidth(code: number): number {
   return 1;
 }
 
-/** Returns the terminal display width of a string, ignoring ANSI escape sequences */
+/** Returns the terminal display width of a string (ANSI escape codes are ignored) */
 export function stringWidth(str: string): number {
-  // Fast path: skip regex when no escape sequences are present
-  const source = str.includes("\x1b")
-    ? str.replace(/\x1b\[[0-9;?]*[@-~]|\x1b\](?:[^\x07\x1b]*(?:\x07|\x1b\\))|\x1b[^[\]]/g, "")
-    : str;
+  const s = str.includes("\x1b") ? stripVTControlCharacters(str) : str;
   let width = 0;
-  for (const ch of source) {
+  for (const ch of s) {
     width += charWidth(ch.codePointAt(0)!);
   }
   return width;

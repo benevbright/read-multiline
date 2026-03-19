@@ -214,11 +214,6 @@ function formatItem(
   return useColon ? `${keys}: ${action}` : `${keys} ${action}`;
 }
 
-function plainItemText(item: HelpItem, useColon = true): string {
-  const keys = item.keys.join("/");
-  return useColon ? `${keys}: ${item.action}` : `${keys} ${item.action}`;
-}
-
 function formatInline(
   items: HelpItem[],
   keyStyle: StyleTextFormat | undefined,
@@ -235,7 +230,8 @@ function formatGrid(
   termWidth: number,
   maxLines?: number,
 ): string {
-  const itemWidths = items.map((item) => stringWidth(plainItemText(item)));
+  const formatted = items.map((item) => formatItem(item, keyStyle, actionStyle));
+  const itemWidths = formatted.map((text) => stringWidth(text));
   const maxItemWidth = Math.max(...itemWidths);
 
   const colWidth = maxItemWidth + 2;
@@ -246,15 +242,14 @@ function formatGrid(
   const rows: string[] = [];
   for (let i = 0; i < items.length; i += numCols) {
     if (maxLines !== undefined && rows.length >= maxLines) break;
-    const rowItems = items.slice(i, i + numCols);
-    const parts = rowItems.map((item, idx) => {
-      const formatted = formatItem(item, keyStyle, actionStyle);
-      if (idx < rowItems.length - 1) {
-        const plain = plainItemText(item);
-        const pad = colWidth - stringWidth(plain);
-        return formatted + " ".repeat(Math.max(0, pad));
+    const rowFormatted = formatted.slice(i, i + numCols);
+    const rowWidths = itemWidths.slice(i, i + numCols);
+    const parts = rowFormatted.map((text, idx) => {
+      if (idx < rowFormatted.length - 1) {
+        const pad = colWidth - rowWidths[idx];
+        return text + " ".repeat(Math.max(0, pad));
       }
-      return formatted;
+      return text;
     });
     rows.push(parts.join(""));
   }
