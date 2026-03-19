@@ -176,7 +176,7 @@ export interface HelpFooterDisplayOptions {
   maxKeysPerAction?: number;
   /** Maximum number of lines to display (default: unlimited) */
   maxLines?: number;
-  /** Overall text style applied via `node:util` styleText (default: "dim") */
+  /** Overall text style applied via `node:util` styleText (default: "dim", or none when separator is set) */
   style?: StyleTextFormat;
   /** Style for key labels like "Enter", "Ctrl+Z" (default: none) */
   keyStyle?: StyleTextFormat;

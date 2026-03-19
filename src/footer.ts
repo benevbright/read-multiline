@@ -15,7 +15,7 @@ interface HelpFooterOptions {
   maxKeysPerAction?: number;
   /** Maximum number of lines to display (default: unlimited) */
   maxLines?: number;
-  /** Overall text style (default: "dim") */
+  /** Overall text style (default: "dim", or none when separator is set) */
   style?: StyleTextFormat;
   /** Style for key labels like "Enter", "Ctrl+Z" (default: none) */
   keyStyle?: StyleTextFormat;
