@@ -24,9 +24,9 @@ export function charWidth(code: number): number {
 
 /** Returns the terminal display width of a string (ANSI escape codes are ignored) */
 export function stringWidth(str: string): number {
-  const plain = stripVTControlCharacters(str);
+  const s = str.includes("\x1b") ? stripVTControlCharacters(str) : str;
   let width = 0;
-  for (const ch of plain) {
+  for (const ch of s) {
     width += charWidth(ch.codePointAt(0)!);
   }
   return width;
