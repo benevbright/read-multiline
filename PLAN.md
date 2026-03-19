@@ -45,11 +45,26 @@ interface ReadMultilineOptions {
 
 - `EditorState` に `highlight` 関数を保持
 - レンダリング時に `state.highlight?.(line, rowIndex) ?? line` で装飾済みテキストを取得
-- 影響箇所:
-  - `rendering.ts`: `redrawFrom()`, `clearScreen()`, `restoreSnapshot()` の行出力部分
-  - `editing.ts`: `insertChar()` の残りテキスト再描画部分（ハイライト適用時は行全体を再描画する方式に変更）
 
-**設計判断**: `insertChar()` でのインクリメンタル描画（現在は挿入文字+残りテキストのみ書く）は、ハイライトが有効な場合は**行全体の再描画**に切り替える。ハイライトにより前後の文字の色が変わる可能性があるため。
+**設計方針 — `renderLine()` の導入**:
+
+行の描画を **`renderLine(state, rowIndex): string`** 関数に統一する。この関数がハイライトの有無を判定し、適切なテキストを返す。
+
+```ts
+function renderLine(state: EditorState, rowIndex: number): string {
+  const line = state.lines[rowIndex];
+  return state.highlight ? state.highlight(line, rowIndex) : line;
+}
+```
+
+これにより、以下の全てのレンダリングパスで一貫したハイライト適用が実現される：
+
+1. **`redrawFrom()`** — 複数行再描画（改行、行マージ、auto-indent の3行操作を含む）
+2. **`clearScreen()`** — 全行再描画
+3. **`restoreSnapshot()`** — undo/redo 後の全行再描画
+4. **`insertChar()`** — ハイライト有効時は行全体再描画に切り替え
+
+**重要**: auto-indent で括弧内改行時に3行操作（元行修正 + インデント行挿入 + 閉じ括弧行挿入）が発生するが、これは `insertNewline()` → `redrawFrom()` パスを通るため、`renderLine()` が `redrawFrom()` 内で使われていれば自動的にハイライト対応される。`insertChar()` の行全体再描画だけでは不十分であり、`redrawFrom()` のハイライト対応が **必須**。
 
 **変更ファイル**: `rendering.ts`, `editing.ts`
 
@@ -114,7 +129,19 @@ interface ReadMultilineOptions {
 
 **実装方針**:
 - `editing.ts` の `insertNewline()` で、改行後に `indent()` の戻り値を新しい行の先頭に挿入
-- `autoPairs` と組み合わせ: `{` の後に改行した場合、閉じ `}` が次行にある場合はさらに1行追加して閉じ括弧を適切なインデントで配置（これはオプションの `indent` 関数の責務外 — 将来的な拡張として検討）
+- **括弧内改行の3行操作**: `autoPairs` と組み合わせ、カーソルが開き括弧と閉じ括弧の間にある状態（例: `func(|)`）で改行した場合:
+  1. 元の行を分割（`func(` まで）
+  2. 新しい行をインデント付きで挿入（カーソルはここ）
+  3. 閉じ括弧を次の行にデインデントして配置
+  ```
+  // Before: func(|)
+  // After:
+  func(
+      |          ← カーソル（indent で計算されたインデント）
+  )              ← 元のインデントレベル
+  ```
+  - この操作は `insertNewline()` 内で行い、最終的に `redrawFrom(state, row, row + 1, indent.length)` を呼ぶ
+  - `redrawFrom()` が `renderLine()` を使ってハイライト付き描画するため、Phase 1 のハイライト実装との互換性は自動的に確保される
 
 **変更ファイル**: `types.ts`, `editing.ts`, `index.ts`
 
@@ -130,8 +157,44 @@ interface ReadMultilineOptions {
 
 ### 3-2. パフォーマンス考慮
 
-- ハイライト関数は行ごとに呼ばれるため、`redrawFrom()` では変更行以降のみ再描画（現行通り）
-- `insertChar()` でハイライト有効時に行全体再描画に切り替えるが、`beginBatch()`/`flushBatch()` でフリッカーを防止
+#### ハイライト関数の呼び出しコスト
+
+`highlight()` はユーザー提供の関数であり、コストが高い可能性がある（例: 正規表現ベースのトークナイザー）。
+
+**最適化戦略**:
+
+1. **キャッシュの導入**: 行内容が変わっていない行のハイライト結果をキャッシュする
+   ```ts
+   // EditorState に追加
+   highlightCache: Map<string, string>;  // lineContent → highlightedContent
+   ```
+   - `renderLine()` 内でキャッシュを参照し、ヒットすれば `highlight()` を呼ばない
+   - キャッシュキーは行テキスト（同じ内容なら同じハイライト結果になる前提）
+   - キャッシュサイズ上限を設ける（例: 最大 1000 エントリ、LRU）
+   - **注意**: `highlight(line, lineIndex)` が行番号依存の装飾を行う場合、キャッシュキーに行番号を含める必要がある。ただし一般的なシンタックスハイライトは行番号非依存なので、デフォルトでは行内容のみをキーとする。行番号依存が必要な場合はキャッシュを無効化するオプションを提供。
+
+2. **再描画範囲の最小化**:
+   - `insertChar()`: ハイライト有効時でも**現在行のみ**再描画（`redrawFrom()` ではなく行単体の再描画）
+   - `redrawFrom()`: 変更行以降を再描画（現行通り）。auto-indent の3行操作でも `fromRow` 以降のみ
+   - **変更のない行をスキップ**: `redrawFrom()` で、変更前後で行内容が同じ行の再描画をスキップできるか検討（ただしカーソル移動のコストとのトレードオフ）
+
+3. **フリッカー防止**:
+   - `beginBatch()`/`flushBatch()` でバッファリング（既存インフラ活用）
+   - ハイライト適用後のテキスト出力前に `\x1b[?2026h` (synchronized output) を検討（ターミナル対応状況による）
+
+#### `insertChar()` のパフォーマンス
+
+現在のインクリメンタル描画（挿入文字+残りテキストのみ出力）は高速。ハイライト有効時に行全体再描画に切り替えるとコスト増だが：
+- 1行分のハイライト計算 + ANSI出力なので、通常は十分高速
+- キャッシュにより `highlight()` の呼び出しは実質キャッシュミス時のみ
+- `beginBatch()`/`flushBatch()` でフリッカーを防止
+
+#### `redrawFrom()` の大量行再描画
+
+ファイル末尾に近い行の変更では再描画行数が少ないが、先頭付近の変更では全行再描画になる。
+- 行数が多い場合（100行超など）、ハイライト関数の累積コストが顕在化する可能性
+- キャッシュにより軽減されるが、全行キャッシュミス（例: ペースト直後）はボトルネックになりうる
+- 対策: `redrawFrom()` 内で変更行のみハイライト再計算し、他の行はキャッシュから取得
 
 ---
 
