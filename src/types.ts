@@ -1,6 +1,46 @@
 import type { styleText } from "node:util";
 
-type StyleTextFormat = Parameters<typeof styleText>[0];
+export type StyleTextFormat = Parameters<typeof styleText>[0];
+
+/** A value that can vary between pending (editing), submitted, cancelled, and error states */
+export type Stateful<T> = T | { pending: T; submitted: T; cancelled?: T; error?: T };
+
+/** Theme configuration for styling prompt elements */
+export interface PromptTheme {
+  /** Style for the prefix text */
+  prefix?: Stateful<StyleTextFormat>;
+  /** Style for the line prefix text */
+  linePrefix?: Stateful<StyleTextFormat>;
+  /** Style for the prompt message text */
+  prompt?: StyleTextFormat;
+  /** Style for user input text while editing */
+  input?: StyleTextFormat;
+  /** Style for the answer text after submission */
+  answer?: StyleTextFormat;
+  /** Style for the answer text after cancellation (e.g. ["strikethrough", "dim"] for clack) */
+  cancelAnswer?: StyleTextFormat;
+
+  /**
+   * How to render the prompt after submission.
+   * - "clear": erase the prompt and input from the terminal (default)
+   * - "preserve": re-render with submitted-state prefix/linePrefix and styles
+   */
+  submitRender?: "clear" | "preserve";
+
+  /**
+   * How to render the prompt after cancellation (Ctrl+C) or EOF (Ctrl+D on empty input).
+   * - "clear": erase the prompt and input from the terminal (default)
+   * - "preserve": re-render with cancelled-state prefix/linePrefix and styles
+   */
+  cancelRender?: "clear" | "preserve";
+
+  /** Style for validation error messages */
+  error?: StyleTextFormat;
+  /** Style for validation success messages */
+  success?: StyleTextFormat;
+  /** Style for footer text */
+  footer?: StyleTextFormat;
+}
 
 /** Error returned when the user cancels input with Ctrl+C. */
 export interface CancelError {
@@ -17,12 +57,22 @@ export interface EOFError {
 /** Union of errors that readMultiline can return. */
 export type ReadMultilineError = CancelError | EOFError;
 
-/** Result tuple: [value, null] on success, [null, error] on failure. */
-export type ReadMultilineResult = [string, null] | [null, ReadMultilineError];
+/**
+ * Result tuple:
+ * - `[string, null]` on success
+ * - `[string, ReadMultilineError]` on cancel/EOF (includes partial input)
+ */
+export type ReadMultilineResult = [string, null] | [string, ReadMultilineError];
 
 export interface ReadMultilineOptions {
-  /** Prompt displayed on continuation lines (2nd line onwards) */
-  linePrompt?: string;
+  /** Prefix displayed before the prompt message (default: "> "). Can be state-dependent. */
+  prefix?: Stateful<string>;
+
+  /** Prefix displayed on each input line (default: prefix value). Can be state-dependent. */
+  linePrefix?: Stateful<string>;
+
+  /** Theme for styling prompt elements */
+  theme?: PromptTheme;
 
   /** Input stream (default: process.stdin) */
   input?: TTYInput;
@@ -82,6 +132,14 @@ export interface ReadMultilineOptions {
   footer?: string;
 
   /**
+   * Whether to clear the input from the terminal after submission (default: true).
+   * - true: input is erased from the terminal after submit
+   * - false: input remains visible in the terminal after submit
+   * @deprecated Use `theme.submitRender` instead ("clear" or "preserve")
+   */
+  clearAfterSubmit?: boolean;
+
+  /**
    * Auto-generated help footer showing key bindings.
    * Displayed below the custom footer (if any), after kitty protocol detection completes.
    * - true: show with default options
@@ -118,10 +176,14 @@ export interface HelpFooterDisplayOptions {
   maxKeysPerAction?: number;
   /** Maximum number of lines to display (default: unlimited) */
   maxLines?: number;
-  /** Overall text style applied via `node:util` styleText (default: "dim") */
+  /** Overall text style applied via `node:util` styleText (default: "dim", or none when separator is set) */
   style?: StyleTextFormat;
   /** Style for key labels like "Enter", "Ctrl+Z" (default: none) */
   keyStyle?: StyleTextFormat;
+  /** Style for action descriptions like "submit", "newline" (default: none) */
+  actionStyle?: StyleTextFormat;
+  /** Separator between items (e.g. " • "). When set, items are displayed inline instead of grid layout */
+  separator?: string;
 }
 
 /** Key combinations that can be used as modified Enter keys. These can be disabled via the disabledKeys option. */
@@ -147,6 +209,9 @@ export interface Snapshot {
   col: number;
 }
 
+/** Shared configuration that can be reused across multiple readMultiline calls via createPrompt */
+export type SharedConfig = ReadMultilineOptions;
+
 export interface EditorState {
   // Buffer
   lines: string[];
@@ -156,11 +221,22 @@ export interface EditorState {
   // Output
   output: NodeJS.WritableStream;
 
-  // Prompt (readonly after init)
-  prompt: string;
-  linePrompt: string;
-  promptWidth: number;
-  linePromptWidth: number;
+  // Prompt header (rebuilt on visual state change)
+  promptHeader: string;
+  promptHeaderHeight: number;
+
+  // Line prefix for all input lines (rebuilt on visual state change)
+  styledLinePrefix: string;
+  linePrefixWidth: number;
+
+  // Current visual state for prefix/linePrefix rendering
+  visualState: "pending" | "error";
+
+  // Theme & raw values for submitted-state re-rendering
+  theme: PromptTheme | undefined;
+  prefixOption: Stateful<string>;
+  linePrefixOption: Stateful<string>;
+  rawPrompt: string;
 
   // Status line
   statusText: string;
