@@ -130,35 +130,48 @@ function canInsertNewline(state: EditorState): boolean {
 
 // --- Transform ---
 
-/** Apply the user-provided transform callback after an edit, re-rendering if content changed */
-function applyTransform(state: EditorState, event: TransformEvent): void {
-  if (!state.transform || state.isPasting) return;
-
-  const oldLines = [...state.lines];
-  const result = state.transform(
-    { lines: [...state.lines], row: state.row, col: state.col },
+/**
+ * Apply the user-provided transform callback after an edit, then render once.
+ * Diffs preEditLines (before base edit) vs final state to minimize redraw scope.
+ * targetRow/targetCol is the logical cursor position after the base edit.
+ */
+function applyTransform(
+  state: EditorState,
+  event: TransformEvent,
+  preEditLines: string[],
+  targetRow: number,
+  targetCol: number,
+): void {
+  const result = state.transform!(
+    { lines: [...state.lines], row: targetRow, col: targetCol },
     event,
   );
-  if (!result) return;
 
-  // Find first changed line
+  if (result) {
+    state.lines.length = 0;
+    state.lines.push(...result.lines);
+    targetRow = result.row;
+    targetCol = result.col;
+  }
+
+  // Diff pre-edit vs final state (covers both base edit + transform changes)
   let fromRow = 0;
   while (
-    fromRow < oldLines.length &&
-    fromRow < result.lines.length &&
-    oldLines[fromRow] === result.lines[fromRow]
+    fromRow < preEditLines.length &&
+    fromRow < state.lines.length &&
+    preEditLines[fromRow] === state.lines[fromRow]
   ) {
     fromRow++;
   }
 
-  // Apply the new state
-  state.lines.length = 0;
-  state.lines.push(...result.lines);
-
-  if (fromRow < state.lines.length || fromRow < oldLines.length) {
-    redrawFrom(state, fromRow, result.row, result.col);
-  } else if (result.row !== state.row || result.col !== state.col) {
-    moveTo(state, result.row, result.col);
+  if (fromRow < state.lines.length || fromRow < preEditLines.length) {
+    // Clamp: fromRow must be a valid row in both the terminal (preEditLines)
+    // and the final state, otherwise redrawFrom can't navigate or access it.
+    const maxRow = Math.min(preEditLines.length, state.lines.length) - 1;
+    if (fromRow > maxRow) fromRow = Math.max(0, maxRow);
+    redrawFrom(state, fromRow, targetRow, targetCol);
+  } else if (targetRow !== state.row || targetCol !== state.col) {
+    moveTo(state, targetRow, targetCol);
   }
 }
 
@@ -168,10 +181,17 @@ function applyTransform(state: EditorState, event: TransformEvent): void {
 export function insertChar(state: EditorState, ch: string): void {
   if (!canInsertChar(state, [...ch].length)) return;
   if (!state.isPasting) saveUndo(state, "insert");
+
+  const hasTransform = !!state.transform && !state.isPasting;
+  const preEditLines = hasTransform ? [...state.lines] : null;
+
   state.lines[state.row] =
     state.lines[state.row].slice(0, state.col) + ch + state.lines[state.row].slice(state.col);
   state.col += ch.length;
-  if (state.highlight) {
+
+  if (preEditLines) {
+    applyTransform(state, { type: "insert", char: ch }, preEditLines, state.row, state.col);
+  } else if (state.highlight) {
     // Full-line redraw when highlighting is enabled
     beginBatch(state);
     w(state, `\x1b[${pW(state) + 1}G\x1b[K`);
@@ -184,7 +204,6 @@ export function insertChar(state: EditorState, ch: string): void {
     const restW = stringWidth(rest);
     if (restW > 0) w(state, `\x1b[${restW}D`);
   }
-  applyTransform(state, { type: "insert", char: ch });
   onContentChanged(state);
 }
 
@@ -192,11 +211,19 @@ export function insertChar(state: EditorState, ch: string): void {
 export function insertNewline(state: EditorState): void {
   if (!canInsertNewline(state)) return;
   if (!state.isPasting) saveUndo(state);
+
+  const hasTransform = !!state.transform && !state.isPasting;
+  const preEditLines = hasTransform ? [...state.lines] : null;
+
   const after = state.lines[state.row].slice(state.col);
   state.lines[state.row] = state.lines[state.row].slice(0, state.col);
   state.lines.splice(state.row + 1, 0, after);
-  redrawFrom(state, state.row, state.row + 1, 0);
-  applyTransform(state, { type: "newline" });
+
+  if (preEditLines) {
+    applyTransform(state, { type: "newline" }, preEditLines, state.row + 1, 0);
+  } else {
+    redrawFrom(state, state.row, state.row + 1, 0);
+  }
   onContentChanged(state);
 }
 
@@ -204,21 +231,31 @@ export function insertNewline(state: EditorState): void {
 export function handleBackspace(state: EditorState): void {
   if (state.col > 0) {
     saveUndo(state);
+    const hasTransform = !!state.transform && !state.isPasting;
+    const preEditLines = hasTransform ? [...state.lines] : null;
     const deleted = charBeforeIndex(state.lines[state.row], state.col);
     state.col -= deleted.length;
     state.lines[state.row] =
       state.lines[state.row].slice(0, state.col) +
       state.lines[state.row].slice(state.col + deleted.length);
-    redrawAfterDelete(state, charWidth(deleted.codePointAt(0)!));
-    applyTransform(state, { type: "backspace" });
+    if (preEditLines) {
+      applyTransform(state, { type: "backspace" }, preEditLines, state.row, state.col);
+    } else {
+      redrawAfterDelete(state, charWidth(deleted.codePointAt(0)!));
+    }
     onContentChanged(state);
   } else if (state.row > 0) {
     saveUndo(state);
+    const hasTransform = !!state.transform && !state.isPasting;
+    const preEditLines = hasTransform ? [...state.lines] : null;
     const prevLen = state.lines[state.row - 1].length;
     state.lines[state.row - 1] += state.lines[state.row];
     state.lines.splice(state.row, 1);
-    redrawFrom(state, state.row - 1, state.row - 1, prevLen);
-    applyTransform(state, { type: "backspace" });
+    if (preEditLines) {
+      applyTransform(state, { type: "backspace" }, preEditLines, state.row - 1, prevLen);
+    } else {
+      redrawFrom(state, state.row - 1, state.row - 1, prevLen);
+    }
     onContentChanged(state);
   }
 }
@@ -227,23 +264,33 @@ export function handleBackspace(state: EditorState): void {
 export function handleDelete(state: EditorState): void {
   if (state.col < state.lines[state.row].length) {
     saveUndo(state);
+    const hasTransform = !!state.transform && !state.isPasting;
+    const preEditLines = hasTransform ? [...state.lines] : null;
     const deleted = charAtIndex(state.lines[state.row], state.col);
     state.lines[state.row] =
       state.lines[state.row].slice(0, state.col) +
       state.lines[state.row].slice(state.col + deleted.length);
-    const rest = state.lines[state.row].slice(state.col);
-    const restW = stringWidth(rest);
-    const deletedW = charWidth(deleted.codePointAt(0)!);
-    w(state, `${styledInput(state, rest)}${" ".repeat(deletedW)}`);
-    if (restW + deletedW > 0) w(state, `\x1b[${restW + deletedW}D`);
-    applyTransform(state, { type: "delete" });
+    if (preEditLines) {
+      applyTransform(state, { type: "delete" }, preEditLines, state.row, state.col);
+    } else {
+      const rest = state.lines[state.row].slice(state.col);
+      const restW = stringWidth(rest);
+      const deletedW = charWidth(deleted.codePointAt(0)!);
+      w(state, `${styledInput(state, rest)}${" ".repeat(deletedW)}`);
+      if (restW + deletedW > 0) w(state, `\x1b[${restW + deletedW}D`);
+    }
     onContentChanged(state);
   } else if (state.row < state.lines.length - 1) {
     saveUndo(state);
+    const hasTransform = !!state.transform && !state.isPasting;
+    const preEditLines = hasTransform ? [...state.lines] : null;
     state.lines[state.row] += state.lines[state.row + 1];
     state.lines.splice(state.row + 1, 1);
-    redrawFrom(state, state.row, state.row, state.col);
-    applyTransform(state, { type: "delete" });
+    if (preEditLines) {
+      applyTransform(state, { type: "delete" }, preEditLines, state.row, state.col);
+    } else {
+      redrawFrom(state, state.row, state.row, state.col);
+    }
     onContentChanged(state);
   }
 }
