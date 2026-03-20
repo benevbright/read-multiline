@@ -132,6 +132,24 @@ export interface ReadMultilineOptions {
    */
   disabledKeys?: ModifiedEnterKey[];
 
+  /**
+   * Syntax highlighting function. Receives line text and 0-indexed line number,
+   * returns a string with ANSI escape sequences for display.
+   * Cursor position is always calculated from the plain text, not the highlighted output.
+   */
+  highlight?: (line: string, lineIndex: number) => string;
+
+  /**
+   * Called after each edit operation. Receives the current editor content,
+   * cursor position, and what edit just occurred. Return a new state to
+   * transform the content, or undefined to leave it unchanged.
+   * Skipped during paste.
+   */
+  transform?: (
+    state: { lines: string[]; row: number; col: number },
+    event: TransformEvent,
+  ) => { lines: string[]; row: number; col: number } | undefined;
+
   /** Fixed footer text displayed below the editor. Appears below the status line. */
   footer?: string;
 
@@ -189,6 +207,13 @@ export interface HelpFooterDisplayOptions {
   /** Separator between items (e.g. " • "). When set, items are displayed inline instead of grid layout */
   separator?: string;
 }
+
+/** Event describing what edit operation just occurred, passed to the transform callback. */
+export type TransformEvent =
+  | { type: "insert"; char: string }
+  | { type: "newline" }
+  | { type: "backspace" }
+  | { type: "delete" };
 
 /** Key combinations that can be used as modified Enter keys. These can be disabled via the disabledKeys option. */
 export type ModifiedEnterKey = "shift+enter" | "ctrl+enter" | "cmd+enter" | "alt+enter" | "ctrl+j";
@@ -278,6 +303,15 @@ export interface EditorState {
   validateDebounceMs: number;
   preferNewlineOnEnter: boolean;
   disabledKeys: Set<ModifiedEnterKey>;
+
+  // Highlight & transform
+  highlight: ((line: string, lineIndex: number) => string) | undefined;
+  transform:
+    | ((
+        state: { lines: string[]; row: number; col: number },
+        event: TransformEvent,
+      ) => { lines: string[]; row: number; col: number } | undefined)
+    | undefined;
 
   // Key map (built once during init)
   keyMap: Record<string, () => void>;

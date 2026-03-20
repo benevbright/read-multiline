@@ -7,16 +7,21 @@ import {
   stringWidth,
 } from "./chars.js";
 import {
+  beginBatch,
   clearStatus,
+  flushBatch,
+  moveTo,
   pW,
   redrawAfterDelete,
   redrawFrom,
+  renderLine,
   restoreSnapshot,
   setStatusWithVisualState,
   styledInput,
+  tCol,
   w,
 } from "./rendering.js";
-import type { EditorState, Snapshot } from "./types.js";
+import type { EditorState, Snapshot, TransformEvent } from "./types.js";
 
 const MAX_UNDO = 200;
 
@@ -123,6 +128,40 @@ function canInsertNewline(state: EditorState): boolean {
   return true;
 }
 
+// --- Transform ---
+
+/** Apply the user-provided transform callback after an edit, re-rendering if content changed */
+function applyTransform(state: EditorState, event: TransformEvent): void {
+  if (!state.transform || state.isPasting) return;
+
+  const oldLines = [...state.lines];
+  const result = state.transform(
+    { lines: [...state.lines], row: state.row, col: state.col },
+    event,
+  );
+  if (!result) return;
+
+  // Find first changed line
+  let fromRow = 0;
+  while (
+    fromRow < oldLines.length &&
+    fromRow < result.lines.length &&
+    oldLines[fromRow] === result.lines[fromRow]
+  ) {
+    fromRow++;
+  }
+
+  // Apply the new state
+  state.lines.length = 0;
+  state.lines.push(...result.lines);
+
+  if (fromRow < state.lines.length || fromRow < oldLines.length) {
+    redrawFrom(state, fromRow, result.row, result.col);
+  } else if (result.row !== state.row || result.col !== state.col) {
+    moveTo(state, result.row, result.col);
+  }
+}
+
 // --- Editing operations ---
 
 /** Insert a character at the current cursor position */
@@ -132,10 +171,20 @@ export function insertChar(state: EditorState, ch: string): void {
   state.lines[state.row] =
     state.lines[state.row].slice(0, state.col) + ch + state.lines[state.row].slice(state.col);
   state.col += ch.length;
-  const rest = state.lines[state.row].slice(state.col);
-  w(state, styledInput(state, ch + rest));
-  const restW = stringWidth(rest);
-  if (restW > 0) w(state, `\x1b[${restW}D`);
+  if (state.highlight) {
+    // Full-line redraw when highlighting is enabled
+    beginBatch(state);
+    w(state, `\x1b[${pW(state) + 1}G\x1b[K`);
+    w(state, renderLine(state, state.row));
+    w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
+    flushBatch(state);
+  } else {
+    const rest = state.lines[state.row].slice(state.col);
+    w(state, styledInput(state, ch + rest));
+    const restW = stringWidth(rest);
+    if (restW > 0) w(state, `\x1b[${restW}D`);
+  }
+  applyTransform(state, { type: "insert", char: ch });
   onContentChanged(state);
 }
 
@@ -147,6 +196,7 @@ export function insertNewline(state: EditorState): void {
   state.lines[state.row] = state.lines[state.row].slice(0, state.col);
   state.lines.splice(state.row + 1, 0, after);
   redrawFrom(state, state.row, state.row + 1, 0);
+  applyTransform(state, { type: "newline" });
   onContentChanged(state);
 }
 
@@ -160,6 +210,7 @@ export function handleBackspace(state: EditorState): void {
       state.lines[state.row].slice(0, state.col) +
       state.lines[state.row].slice(state.col + deleted.length);
     redrawAfterDelete(state, charWidth(deleted.codePointAt(0)!));
+    applyTransform(state, { type: "backspace" });
     onContentChanged(state);
   } else if (state.row > 0) {
     saveUndo(state);
@@ -167,6 +218,7 @@ export function handleBackspace(state: EditorState): void {
     state.lines[state.row - 1] += state.lines[state.row];
     state.lines.splice(state.row, 1);
     redrawFrom(state, state.row - 1, state.row - 1, prevLen);
+    applyTransform(state, { type: "backspace" });
     onContentChanged(state);
   }
 }
@@ -184,12 +236,14 @@ export function handleDelete(state: EditorState): void {
     const deletedW = charWidth(deleted.codePointAt(0)!);
     w(state, `${styledInput(state, rest)}${" ".repeat(deletedW)}`);
     if (restW + deletedW > 0) w(state, `\x1b[${restW + deletedW}D`);
+    applyTransform(state, { type: "delete" });
     onContentChanged(state);
   } else if (state.row < state.lines.length - 1) {
     saveUndo(state);
     state.lines[state.row] += state.lines[state.row + 1];
     state.lines.splice(state.row + 1, 1);
     redrawFrom(state, state.row, state.row, state.col);
+    applyTransform(state, { type: "delete" });
     onContentChanged(state);
   }
 }

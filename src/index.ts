@@ -7,6 +7,7 @@ import * as presets from "./presets/index.js";
 import {
   clearBelowEditor,
   clearScreen,
+  renderLine,
   setFooter,
   setStatusWithVisualState,
   tCol,
@@ -44,6 +45,7 @@ export type {
   SharedConfig,
   Stateful,
   StyleTextFormat,
+  TransformEvent,
   TTYInput,
 } from "./types.js";
 export { presets };
@@ -142,6 +144,8 @@ function readFromTTY(
       preferNewlineOnEnter = false,
       clearAfterSubmit = true,
       disabledKeys = [],
+      highlight,
+      transform,
       footer,
       helpFooter = true,
     } = options;
@@ -203,6 +207,8 @@ function readFromTTY(
       validateDebounceMs,
       preferNewlineOnEnter,
       disabledKeys: new Set(disabledKeys),
+      highlight,
+      transform,
       keyMap: {},
       buffering: false,
       writeBuffer: "",
@@ -346,9 +352,9 @@ function readFromTTY(
       const initLines = initialValue.split("\n");
       state.lines.length = 0;
       state.lines.push(...initLines);
-      w(state, applyStyle(initLines[0], theme?.input));
+      w(state, renderLine(state, 0));
       for (let i = 1; i < initLines.length; i++) {
-        w(state, "\n" + styledLinePrefix + applyStyle(initLines[i], theme?.input));
+        w(state, "\n" + styledLinePrefix + renderLine(state, i));
       }
       state.row = initLines.length - 1;
       state.col = initLines[state.row].length;
