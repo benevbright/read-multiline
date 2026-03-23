@@ -59,8 +59,10 @@
     "oxfmt": "0.41.0",
     "oxlint": "1.56.0",
     "publint": "0.3.18",
+    "tsx": "^4.21.0",
     "typescript": "5.9.3",
-    "vitest": "4.1.0"
+    "vitest": "4.1.0",
+    "zigpty": "^0.0.4"
   },
   "packageManager": "pnpm@10.32.1",
   "pnpm": {
