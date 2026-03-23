@@ -1881,6 +1881,51 @@ describe("readMultiline (TTY mode)", () => {
     expect(await promise).toEqual(["abc", null]);
   });
 
+  it("highlight is preserved after backspace", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line) => `\x1b[31m${line}\x1b[0m`,
+    });
+    input.send("abc");
+    output.chunks.length = 0;
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["ab", null]);
+    const raw = output.chunks.join("");
+    expect(raw).toContain("\x1b[31m");
+  });
+
+  it("highlight is preserved after delete", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line) => `\x1b[31m${line}\x1b[0m`,
+    });
+    input.send("abc");
+    input.send(KEY.LEFT);
+    output.chunks.length = 0;
+    input.send(KEY.DELETE);
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["ab", null]);
+    const raw = output.chunks.join("");
+    expect(raw).toContain("\x1b[31m");
+  });
+
+  it("highlight is applied after paste", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line) => `\x1b[31m${line}\x1b[0m`,
+    });
+    output.chunks.length = 0;
+    input.send("\x1b[200~pasted\x1b[201~");
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["pasted", null]);
+    const raw = output.chunks.join("");
+    expect(raw).toContain("\x1b[31mpasted\x1b[0m");
+  });
+
   // --- transform option ---
 
   it("transform can auto-close brackets", async () => {

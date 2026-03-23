@@ -181,6 +181,8 @@ export function processInput(state: EditorState, seq: string): void {
   if (endIdx !== -1) {
     if (endIdx > 0) processPaste(state, seq.slice(0, endIdx));
     state.isPasting = false;
+    // Re-render once after paste to apply highlight/styledInput
+    clearScreen(state);
     const after = seq.slice(endIdx + PASTE_END.length);
     if (after) processInput(state, after);
     return;
