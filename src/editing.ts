@@ -130,6 +130,11 @@ function canInsertNewline(state: EditorState): boolean {
 
 // --- Transform ---
 
+/** Capture pre-edit lines snapshot when transform is active (not during paste) */
+function capturePreEdit(state: EditorState): string[] | null {
+  return state.transform && !state.isPasting ? [...state.lines] : null;
+}
+
 /**
  * Apply the user-provided transform callback after an edit, then render once.
  * Diffs preEditLines (before base edit) vs final state to minimize redraw scope.
@@ -165,6 +170,11 @@ function applyTransform(
   }
 
   if (fromRow < state.lines.length || fromRow < preEditLines.length) {
+    // Guard: both sides must have at least one line for redrawFrom to work
+    if (state.lines.length === 0 || preEditLines.length === 0) {
+      moveTo(state, targetRow, targetCol);
+      return;
+    }
     // Clamp: fromRow must be a valid row in both the terminal (preEditLines)
     // and the final state, otherwise redrawFrom can't navigate or access it.
     const maxRow = Math.min(preEditLines.length, state.lines.length) - 1;
@@ -182,8 +192,7 @@ export function insertChar(state: EditorState, ch: string): void {
   if (!canInsertChar(state, [...ch].length)) return;
   if (!state.isPasting) saveUndo(state, "insert");
 
-  const hasTransform = !!state.transform && !state.isPasting;
-  const preEditLines = hasTransform ? [...state.lines] : null;
+  const preEditLines = capturePreEdit(state);
 
   state.lines[state.row] =
     state.lines[state.row].slice(0, state.col) + ch + state.lines[state.row].slice(state.col);
@@ -212,8 +221,7 @@ export function insertNewline(state: EditorState): void {
   if (!canInsertNewline(state)) return;
   if (!state.isPasting) saveUndo(state);
 
-  const hasTransform = !!state.transform && !state.isPasting;
-  const preEditLines = hasTransform ? [...state.lines] : null;
+  const preEditLines = capturePreEdit(state);
 
   const after = state.lines[state.row].slice(state.col);
   state.lines[state.row] = state.lines[state.row].slice(0, state.col);

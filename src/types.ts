@@ -136,6 +136,7 @@ export interface ReadMultilineOptions {
    * Syntax highlighting function. Receives line text and 0-indexed line number,
    * returns a string with ANSI escape sequences for display.
    * Cursor position is always calculated from the plain text, not the highlighted output.
+   * When set, takes precedence over `theme.input` styling for line rendering.
    */
   highlight?: (line: string, lineIndex: number) => string;
 
@@ -145,10 +146,7 @@ export interface ReadMultilineOptions {
    * transform the content, or undefined to leave it unchanged.
    * Skipped during paste.
    */
-  transform?: (
-    state: { lines: string[]; row: number; col: number },
-    event: TransformEvent,
-  ) => { lines: string[]; row: number; col: number } | undefined;
+  transform?: (state: TransformState, event: TransformEvent) => TransformState | undefined;
 
   /** Fixed footer text displayed below the editor. Appears below the status line. */
   footer?: string;
@@ -206,6 +204,13 @@ export interface HelpFooterDisplayOptions {
   actionStyle?: StyleTextFormat;
   /** Separator between items (e.g. " • "). When set, items are displayed inline instead of grid layout */
   separator?: string;
+}
+
+/** Minimal editor state passed to and returned from the transform callback. */
+export interface TransformState {
+  lines: string[];
+  row: number;
+  col: number;
 }
 
 /** Event describing what edit operation just occurred, passed to the transform callback. */
@@ -307,10 +312,7 @@ export interface EditorState {
   // Highlight & transform
   highlight: ((line: string, lineIndex: number) => string) | undefined;
   transform:
-    | ((
-        state: { lines: string[]; row: number; col: number },
-        event: TransformEvent,
-      ) => { lines: string[]; row: number; col: number } | undefined)
+    | ((state: TransformState, event: TransformEvent) => TransformState | undefined)
     | undefined;
 
   // Key map (built once during init)

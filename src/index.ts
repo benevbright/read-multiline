@@ -46,6 +46,7 @@ export type {
   Stateful,
   StyleTextFormat,
   TransformEvent,
+  TransformState,
   TTYInput,
 } from "./types.js";
 export { presets };
