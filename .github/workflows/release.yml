@@ -27,7 +27,7 @@ jobs:
           standalone: true
           run_install: false
       - name: Install Node.js
-        run: pnpm env use --global 22
+        run: pnpm env use --global 24
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           registry-url: "https://registry.npmjs.org"
