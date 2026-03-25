@@ -53,6 +53,7 @@
     "@inquirer/prompts": "8.3.2",
     "@types/node": "25.5.0",
     "@xterm/headless": "6.0.0",
+    "graphql": "^16.13.2",
     "knip": "6.0.6",
     "lefthook": "2.1.4",
     "organize-imports-cli": "0.10.0",
@@ -60,6 +61,7 @@
     "oxlint": "1.57.0",
     "publint": "0.3.18",
     "shiki": "^4.0.2",
+    "sql-highlight": "^6.1.0",
     "typescript": "6.0.2",
     "vitest": "4.1.1"
   },

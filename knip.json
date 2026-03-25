@@ -3,5 +3,5 @@
   "project": ["src/**/*.ts"],
   "ignoreExportsUsedInFile": true,
   "ignoreBinaries": [],
-  "ignoreDependencies": ["@inquirer/prompts", "@clack/prompts", "shiki"]
+  "ignoreDependencies": ["@inquirer/prompts", "@clack/prompts", "graphql", "shiki", "sql-highlight"]
 }
