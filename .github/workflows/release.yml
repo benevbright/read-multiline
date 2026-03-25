@@ -26,10 +26,9 @@ jobs:
         with:
           standalone: true
           run_install: false
-      - name: Install Node.js
-        run: pnpm env use --global 22
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
