@@ -1,5 +1,12 @@
 # @toiroakr/read-multiline
 
+## 0.2.1
+
+### Patch Changes
+
+- 8a6ad41: Fix Ctrl+J not inserting newline in terminals with kitty keyboard protocol support
+- 73f3319: Use Node 24 in release workflow for npm trusted publishing support (requires npm >= 11.5.1)
+
 ## 0.2.0
 
 ### Minor Changes
