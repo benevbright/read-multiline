@@ -1670,6 +1670,34 @@ describe("readMultiline (TTY mode)", () => {
     expect(await promise).toEqual(["a\nb\nc", null]);
   });
 
+  it("kitty Ctrl+J inserts newline", async () => {
+    const KITTY_CTRL_J = "\x1b[106;5u";
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+    });
+    input.send("hello");
+    input.send(KITTY_CTRL_J); // kitty Ctrl+J inserts newline
+    input.send("world");
+    input.send(KEY.ENTER); // submits
+    expect(await promise).toEqual(["hello\nworld", null]);
+  });
+
+  it("kitty Ctrl+J respects disabledKeys", async () => {
+    const KITTY_CTRL_J = "\x1b[106;5u";
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      disabledKeys: ["ctrl+j"],
+    });
+    input.send("hello");
+    input.send(KITTY_CTRL_J); // disabled, ignored
+    input.send(KEY.SHIFT_ENTER); // newline still works
+    input.send("world");
+    input.send(KEY.ENTER); // submits
+    expect(await promise).toEqual(["hello\nworld", null]);
+  });
+
   it("preferNewlineOnEnter=true: plain Enter does not submit", async () => {
     const promise = readMultiline("", {
       input,
