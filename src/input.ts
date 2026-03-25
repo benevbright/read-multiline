@@ -50,6 +50,7 @@ export function buildKeyMap(
   // Ctrl+J: always newline regardless of preferNewlineOnEnter
   if (!state.disabledKeys.has("ctrl+j")) {
     keyMap["\n"] = () => insertNewline(state);
+    keyMap["\x1b[106;5u"] = () => insertNewline(state); // kitty Ctrl+J
   }
 
   // Modified Enter keys

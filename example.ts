@@ -5,9 +5,9 @@ console.log("Multi-line input test\n");
 const history: string[] = [];
 
 while (true) {
-  const [value, error] = await readMultiline({
-    prompt: "> ",
-    linePrompt: "  ",
+  const [value, error] = await readMultiline("Enter your message:", {
+    prefix: "> ",
+    linePrefix: "  ",
     history,
     maxLines: 100,
     maxLength: 500,
