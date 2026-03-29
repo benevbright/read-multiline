@@ -1926,6 +1926,141 @@ describe("submitRender", () => {
     // Should end with newline (preserve mode)
     expect(raw.endsWith("\n")).toBe(true);
   });
+
+  it("submitRender ellipsis: shows only first line with … for multi-line input", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      prefix: { pending: "? ", submitted: "✔ " },
+      theme: { submitRender: "ellipsis" },
+    });
+    input.send("line1");
+    input.send("\n"); // Ctrl+J newline
+    input.send("line2");
+    input.send("\n");
+    input.send("line3");
+    input.send(KEY.ENTER);
+    await promise;
+    const raw = output.chunks.join("");
+    expect(raw).toContain("✔ ");
+    expect(raw).toContain("line1");
+    // Should contain ellipsis
+    expect(raw).toContain("…");
+    // Should NOT contain line2 or line3 after the final re-render
+    // (they may appear during editing, but the last render should truncate)
+    expect(raw.endsWith("\n")).toBe(true);
+  });
+
+  it("submitRender ellipsis: shows single line without … for single-line input", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      prefix: { pending: "? ", submitted: "✔ " },
+      theme: { submitRender: "ellipsis" },
+    });
+    input.send("hello");
+    input.send(KEY.ENTER);
+    await promise;
+    const raw = output.chunks.join("");
+    expect(raw).toContain("✔ ");
+    expect(raw).toContain("hello");
+    // The final re-render should NOT have ellipsis for single-line input
+    // Check the portion after the last clear sequence
+    const lastClearIdx = raw.lastIndexOf("\r\x1b[J");
+    const afterClear = raw.slice(lastClearIdx);
+    expect(afterClear).not.toContain("…");
+  });
+
+  it("submitRender number: shows up to N lines with … when truncated", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      prefix: { pending: "? ", submitted: "✔ " },
+      theme: { submitRender: 2 },
+    });
+    input.send("line1");
+    input.send("\n");
+    input.send("line2");
+    input.send("\n");
+    input.send("line3");
+    input.send("\n");
+    input.send("line4");
+    input.send(KEY.ENTER);
+    await promise;
+    const raw = output.chunks.join("");
+    expect(raw).toContain("✔ ");
+    // Should contain ellipsis since 4 lines > 2
+    expect(raw).toContain("…");
+    expect(raw.endsWith("\n")).toBe(true);
+  });
+
+  it("submitRender number: shows all lines without … when under limit", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      prefix: { pending: "? ", submitted: "✔ " },
+      theme: { submitRender: 3 },
+    });
+    input.send("line1");
+    input.send("\n");
+    input.send("line2");
+    input.send(KEY.ENTER);
+    await promise;
+    const raw = output.chunks.join("");
+    expect(raw).toContain("✔ ");
+    const lastClearIdx = raw.lastIndexOf("\r\x1b[J");
+    const afterClear = raw.slice(lastClearIdx);
+    expect(afterClear).not.toContain("…");
+  });
+});
+
+// --- cancelRender ellipsis/number ---
+
+describe("cancelRender ellipsis/number", () => {
+  let input: TTYInput & EventEmitter & { send: (data: string) => void };
+  let output: ReturnType<typeof createNullOutput>;
+  beforeEach(() => {
+    input = createTTYInput();
+    output = createNullOutput();
+  });
+
+  it("cancelRender ellipsis: shows only first line with … on cancel", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      prefix: { pending: "? ", submitted: "✔ ", cancelled: "✖ " },
+      theme: { cancelRender: "ellipsis" },
+    });
+    input.send("line1");
+    input.send("\n");
+    input.send("line2");
+    input.send(KEY.CTRL_C);
+    await promise;
+    const raw = output.chunks.join("");
+    expect(raw).toContain("✖ ");
+    expect(raw).toContain("…");
+    expect(raw.endsWith("\n")).toBe(true);
+  });
+
+  it("cancelRender number: shows up to N lines with … on cancel", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      prefix: { pending: "? ", submitted: "✔ ", cancelled: "✖ " },
+      theme: { cancelRender: 2 },
+    });
+    input.send("line1");
+    input.send("\n");
+    input.send("line2");
+    input.send("\n");
+    input.send("line3");
+    input.send(KEY.CTRL_C);
+    await promise;
+    const raw = output.chunks.join("");
+    expect(raw).toContain("✖ ");
+    expect(raw).toContain("…");
+    expect(raw.endsWith("\n")).toBe(true);
+  });
 });
 
 // --- error visual state ---
