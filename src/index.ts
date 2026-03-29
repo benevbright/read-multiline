@@ -246,9 +246,9 @@ function readFromTTY(
     }
 
     // Determine submitRender and cancelRender modes
-    const submitRender: "clear" | "preserve" =
+    const submitRender: "clear" | "preserve" | "ellipsis" | number =
       theme?.submitRender ?? (clearAfterSubmit ? "clear" : "preserve");
-    const cancelRender: "clear" | "preserve" = theme?.cancelRender ?? "clear";
+    const cancelRender: "clear" | "preserve" | "ellipsis" | number = theme?.cancelRender ?? "clear";
 
     /** Erase all editor content (prompt header + input lines + status + footer) from the terminal */
     function clearEditorArea() {
@@ -276,7 +276,7 @@ function readFromTTY(
       if (submitRender === "clear") {
         clearEditorArea();
       } else {
-        renderStateChange(state, theme, "submitted");
+        renderStateChange(state, theme, "submitted", submitRender);
       }
 
       cleanup();
@@ -298,10 +298,10 @@ function readFromTTY(
     function handleEOF() {
       const content = state.lines.join("\n");
       if (content.length === 0) {
-        if (cancelRender === "preserve") {
-          renderStateChange(state, theme, "cancelled");
-        } else {
+        if (cancelRender === "clear") {
           clearEditorArea();
+        } else {
+          renderStateChange(state, theme, "cancelled", cancelRender);
         }
 
         cleanup();
@@ -315,10 +315,10 @@ function readFromTTY(
     }
 
     function cancel() {
-      if (cancelRender === "preserve") {
-        renderStateChange(state, theme, "cancelled");
-      } else {
+      if (cancelRender === "clear") {
         clearEditorArea();
+      } else {
+        renderStateChange(state, theme, "cancelled", cancelRender);
       }
 
       cleanup();
@@ -421,6 +421,7 @@ function renderStateChange(
   state: EditorState,
   theme: PromptTheme | undefined,
   renderState: "submitted" | "cancelled",
+  mode: "preserve" | "ellipsis" | number = "preserve",
 ): void {
   // Move to top of editor (input lines + prompt header)
   const upCount = state.row + state.promptHeaderHeight;
@@ -436,6 +437,11 @@ function renderStateChange(
   const answerStyle =
     renderState === "cancelled" ? (theme?.cancelAnswer ?? theme?.answer) : theme?.answer;
 
+  // Determine how many lines to display
+  const maxLines = mode === "ellipsis" ? 1 : typeof mode === "number" ? mode : state.lines.length;
+  const displayCount = Math.min(maxLines, state.lines.length);
+  const truncated = state.lines.length > displayCount;
+
   // Draw prompt header
   if (headerHeight > 0) {
     w(state, header);
@@ -443,15 +449,20 @@ function renderStateChange(
   }
 
   // Draw input lines with line prefix and answer style
-  for (let i = 0; i < state.lines.length; i++) {
+  for (let i = 0; i < displayCount; i++) {
     if (i > 0) w(state, "\n");
     w(state, linePrefix + applyStyle(state.lines[i], answerStyle));
+  }
+
+  // Append ellipsis indicator if truncated
+  if (truncated) {
+    w(state, applyStyle(" …", "dim"));
   }
 
   // Reset state for cleanup
   state.statusText = "";
   state.statusColor = "";
   state.footerText = "";
-  state.row = state.lines.length - 1;
-  state.col = state.lines[state.row].length;
+  state.row = displayCount - 1;
+  state.col = state.lines[displayCount - 1].length;
 }
