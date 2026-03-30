@@ -130,7 +130,13 @@ function canInsertNewline(state: EditorState): boolean {
 
 // --- Transform ---
 
-/** Capture pre-edit lines snapshot when transform is active (not during paste) */
+/**
+ * Capture pre-edit lines snapshot when transform is active (not during paste).
+ *
+ * NOTE: Only invoked from the four core edit operations (insertChar, insertNewline,
+ * handleBackspace, handleDelete). Other editing actions (deleteToLineStart,
+ * deleteToLineEnd, deleteWordBack) bypass transform/highlight-aware rendering.
+ */
 function capturePreEdit(state: EditorState): string[] | null {
   return state.transform && !state.isPasting ? [...state.lines] : null;
 }
@@ -154,8 +160,10 @@ function applyTransform(
 
   if (result) {
     const newLines = result.lines.length > 0 ? result.lines : [""];
-    let newRow = Math.max(0, Math.min(result.row, newLines.length - 1));
-    let newCol = Math.max(0, Math.min(result.col, newLines[newRow].length));
+    const safeRow = Number.isFinite(result.row) ? result.row : targetRow;
+    const safeCol = Number.isFinite(result.col) ? result.col : targetCol;
+    let newRow = Math.max(0, Math.min(safeRow, newLines.length - 1));
+    let newCol = Math.max(0, Math.min(safeCol, newLines[newRow].length));
     state.lines.length = 0;
     state.lines.push(...newLines);
     targetRow = newRow;
