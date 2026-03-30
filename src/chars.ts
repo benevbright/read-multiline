@@ -75,14 +75,6 @@ export function isWordChar(ch: string): boolean {
   return charWidth(ch.codePointAt(0)!) === 2;
 }
 
-// eslint-disable-next-line no-control-regex
-const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g;
-
-/** Strip ANSI escape sequences from a string */
-function stripAnsi(str: string): string {
-  return str.replace(ANSI_RE, "");
-}
-
 /** Count total characters across all lines (join with newlines) */
 export function contentLength(lines: string[]): number {
   let len = 0;
