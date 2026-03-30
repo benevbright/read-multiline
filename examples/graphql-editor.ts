@@ -1,7 +1,11 @@
 /**
  * Example: GraphQL editor with syntax highlighting and auto-editing
  *
- * Uses the official graphql package's Lexer for tokenization.
+ * Uses the official graphql package's Lexer for tokenization with
+ * context tracking (paren depth, previous token) to provide semantic-level
+ * coloring: keywords, def names, field names, argument names, types,
+ * variables, directives, etc.
+ *
  * Transform provides auto-closing brackets/parens and auto-indentation.
  *
  * Run: npx tsx examples/graphql-editor.ts
@@ -11,16 +15,19 @@ import { Lexer, Source, TokenKind } from "graphql";
 import type { TransformEvent, TransformState } from "../src/index.js";
 import { readMultiline } from "../src/index.js";
 
-// ANSI color helpers
+// ANSI color helpers — same palette as graphql-semantic-editor
 const RESET = "\x1b[0m";
-const BLUE = "\x1b[34m"; // keywords
-const CYAN = "\x1b[36m"; // type names (capitalized)
-const GREEN = "\x1b[32m"; // strings
-const BRIGHT_YELLOW = "\x1b[93m"; // numbers
+const BLUE = "\x1b[34m"; // keyword, number, builtin (true/false)
+const BOLD_CYAN = "\x1b[1;36m"; // def (operation/fragment name)
+const BRIGHT_BLUE = "\x1b[94m"; // field name
+const ITALIC_YELLOW = "\x1b[3;33m"; // argument name
+const CYAN = "\x1b[36m"; // type name
+const MAGENTA = "\x1b[35m"; // variable ($)
+const BOLD_MAGENTA = "\x1b[1;35m"; // directive (@)
+const GREEN = "\x1b[32m"; // string
+const DIM = "\x1b[90m"; // comment, punctuation
 const YELLOW = "\x1b[33m"; // braces {}
 const DIM_YELLOW = "\x1b[2;33m"; // parens (), brackets []
-const MAGENTA = "\x1b[35m"; // variables ($)
-const DIM = "\x1b[90m"; // comments, punctuation
 
 const GQL_KEYWORDS = new Set([
   "query",
@@ -38,10 +45,12 @@ const GQL_KEYWORDS = new Set([
   "schema",
   "directive",
   "implements",
-  "true",
-  "false",
-  "null",
 ]);
+
+// Keywords that introduce a definition name (next NAME is the def)
+const DEF_KEYWORDS = new Set(["query", "mutation", "subscription", "fragment"]);
+
+const BUILTINS = new Set(["true", "false", "null"]);
 
 function highlight(line: string): string {
   // Handle comment lines
@@ -55,6 +64,12 @@ function highlight(line: string): string {
     let result = "";
     let pos = 0;
 
+    // Context tracking
+    let parenDepth = 0; // inside (...) for argument detection
+    let prevKind: string = ""; // previous token kind
+    let prevText = ""; // previous token text
+    let afterColon = false; // next NAME is a type
+
     let token = lexer.advance();
     while (token.kind !== TokenKind.EOF) {
       // Preserve whitespace between tokens
@@ -64,50 +79,90 @@ function highlight(line: string): string {
 
       const text = line.slice(token.start, token.end);
       switch (token.kind) {
-        case TokenKind.NAME:
-          if (GQL_KEYWORDS.has(text)) {
+        case TokenKind.NAME: {
+          if (prevKind === TokenKind.DOLLAR) {
+            // $name → variable (continuation of $)
+            result += `${MAGENTA}${text}${RESET}`;
+          } else if (prevKind === TokenKind.AT) {
+            // @name → directive name
+            result += `${BOLD_MAGENTA}${text}${RESET}`;
+          } else if (BUILTINS.has(text)) {
             result += `${BLUE}${text}${RESET}`;
-          } else if (text[0] === text[0].toUpperCase()) {
+          } else if (GQL_KEYWORDS.has(text)) {
+            result += `${BLUE}${text}${RESET}`;
+          } else if (DEF_KEYWORDS.has(prevText)) {
+            // Name right after query/mutation/subscription/fragment → def name
+            result += `${BOLD_CYAN}${text}${RESET}`;
+          } else if (afterColon) {
+            // After : → type name
             result += `${CYAN}${text}${RESET}`;
+          } else if (parenDepth > 0) {
+            // Inside parens, not after colon → argument name
+            result += `${ITALIC_YELLOW}${text}${RESET}`;
           } else {
-            result += text;
+            // Default: field name
+            result += `${BRIGHT_BLUE}${text}${RESET}`;
           }
+          afterColon = false;
           break;
+        }
         case TokenKind.INT:
         case TokenKind.FLOAT:
-          result += `${BRIGHT_YELLOW}${text}${RESET}`;
+          result += `${BLUE}${text}${RESET}`;
+          afterColon = false;
           break;
         case TokenKind.STRING:
         case TokenKind.BLOCK_STRING:
           result += `${GREEN}${text}${RESET}`;
+          afterColon = false;
           break;
         case TokenKind.DOLLAR:
-          // Color $ and the following name together as a variable
           result += `${MAGENTA}${text}${RESET}`;
+          afterColon = false;
+          break;
+        case TokenKind.AT:
+          result += `${BOLD_MAGENTA}${text}${RESET}`;
+          afterColon = false;
           break;
         case TokenKind.BRACE_L:
         case TokenKind.BRACE_R:
           result += `${YELLOW}${text}${RESET}`;
+          afterColon = false;
           break;
         case TokenKind.PAREN_L:
+          parenDepth++;
+          result += `${DIM_YELLOW}${text}${RESET}`;
+          afterColon = false;
+          break;
         case TokenKind.PAREN_R:
+          parenDepth = Math.max(0, parenDepth - 1);
+          result += `${DIM_YELLOW}${text}${RESET}`;
+          afterColon = false;
+          break;
         case TokenKind.BRACKET_L:
         case TokenKind.BRACKET_R:
           result += `${DIM_YELLOW}${text}${RESET}`;
+          afterColon = false;
+          break;
+        case TokenKind.COLON:
+          result += `${DIM}${text}${RESET}`;
+          afterColon = true;
           break;
         case TokenKind.BANG:
-        case TokenKind.COLON:
         case TokenKind.EQUALS:
         case TokenKind.PIPE:
-        case TokenKind.AT:
         case TokenKind.AMP:
         case TokenKind.SPREAD:
           result += `${DIM}${text}${RESET}`;
+          afterColon = false;
           break;
         default:
           result += text;
+          afterColon = false;
       }
 
+      prevKind = token.kind;
+      prevText = text;
       pos = token.end;
       token = lexer.advance();
     }
@@ -144,6 +199,17 @@ function transform(state: TransformState, event: TransformEvent): TransformState
     if (line[col] === event.char) {
       const newLine = line.slice(0, col) + line.slice(col + 1);
       return { lines: lines.with(row, newLine), row, col };
+    }
+  }
+
+  // Dedent: backspace at indent-only position removes one indent level (2 spaces)
+  if (event.type === "backspace") {
+    const line = lines[row];
+    const beforeCursor = line.slice(0, col);
+    if (beforeCursor.length >= 1 && /^ +$/.test(beforeCursor)) {
+      const newIndent = beforeCursor.slice(0, -1);
+      const newLine = newIndent + line.slice(col);
+      return { lines: lines.with(row, newLine), row, col: newIndent.length };
     }
   }
 

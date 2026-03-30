@@ -143,6 +143,17 @@ function transform(state: TransformState, event: TransformEvent): TransformState
     }
   }
 
+  // Dedent: backspace at indent-only position removes one indent level (2 spaces)
+  if (event.type === "backspace") {
+    const line = lines[row];
+    const beforeCursor = line.slice(0, col);
+    if (beforeCursor.length >= 1 && /^ +$/.test(beforeCursor)) {
+      const newIndent = beforeCursor.slice(0, -1);
+      const newLine = newIndent + line.slice(col);
+      return { lines: lines.with(row, newLine), row, col: newIndent.length };
+    }
+  }
+
   // Auto-indent on newline
   if (event.type === "newline" && row > 0) {
     const prevLine = lines[row - 1];
