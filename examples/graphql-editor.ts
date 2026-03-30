@@ -172,18 +172,16 @@ console.log(
   "GraphQL Editor (highlighting via graphql Lexer, auto-indent + auto-close brackets):\n",
 );
 
-const [gql, error] = await readMultiline("", {
+const [_gql, error] = await readMultiline("", {
   prefix: "gql> ",
   linePrefix: "   | ",
   highlight,
   transform,
   preferNewlineOnEnter: true,
   helpFooter: true,
+  theme: { submitRender: "content" },
 });
 
 if (error) {
   console.log(`\n(${error.kind})`);
-} else {
-  console.log("\n--- GraphQL ---");
-  console.log(gql);
 }

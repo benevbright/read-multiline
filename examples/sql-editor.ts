@@ -58,18 +58,16 @@ function transform(state: TransformState, event: TransformEvent): TransformState
 
 console.log("SQL Editor (highlighting via sql-highlight, auto-indent + auto-close parens):\n");
 
-const [sql, error] = await readMultiline("", {
+const [_sql, error] = await readMultiline("", {
   prefix: "sql> ",
   linePrefix: "   | ",
   highlight,
   transform,
   preferNewlineOnEnter: true,
   helpFooter: true,
+  theme: { submitRender: "content" },
 });
 
 if (error) {
   console.log(`\n(${error.kind})`);
-} else {
-  console.log("\n--- SQL ---");
-  console.log(sql);
 }

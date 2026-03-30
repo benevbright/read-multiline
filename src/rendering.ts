@@ -207,7 +207,6 @@ export function redrawFrom(
   for (let i = fromRow + 1; i < state.lines.length; i++) {
     w(state, "\n" + state.styledLinePrefix + renderLine(state, i));
   }
-  }
 
   const endRow = state.lines.length - 1;
   if (endRow > targetRow) w(state, `\x1b[${endRow - targetRow}A`);
@@ -246,7 +245,6 @@ function fullRedraw(state: EditorState, rewindHeaderHeight?: number): void {
   for (let i = 1; i < state.lines.length; i++) {
     w(state, "\n" + state.styledLinePrefix + renderLine(state, i) + "\x1b[K");
   }
-  }
   w(state, "\x1b[J");
   const endRow = state.lines.length - 1;
   if (endRow > state.row) w(state, `\x1b[${endRow - state.row}A`);
@@ -272,7 +270,6 @@ export function restoreSnapshot(state: EditorState, snap: Snapshot): void {
   w(state, renderLine(state, 0));
   for (let i = 1; i < state.lines.length; i++) {
     w(state, "\n" + state.styledLinePrefix + renderLine(state, i));
-  }
   }
   const endRow = state.lines.length - 1;
   if (endRow > snap.row) w(state, `\x1b[${endRow - snap.row}A`);

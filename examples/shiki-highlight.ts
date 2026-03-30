@@ -45,19 +45,17 @@ function highlight(line: string): string {
 
 console.log(`\nEnter ${lang} code (true-color highlighting with ${theme} theme):\n`);
 
-const [code, error] = await readMultiline("", {
+const [_code, error] = await readMultiline("", {
   prefix: `${lang}> `,
   linePrefix: "   | ",
   highlight,
   preferNewlineOnEnter: true,
   helpFooter: true,
+  theme: { submitRender: "content" },
 });
 
 highlighter.dispose();
 
 if (error) {
   console.log(`\n(${error.kind})`);
-} else {
-  console.log("\n--- Result ---");
-  console.log(code);
 }

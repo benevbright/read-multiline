@@ -79,7 +79,7 @@ export function isWordChar(ch: string): boolean {
 const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g;
 
 /** Strip ANSI escape sequences from a string */
-export function stripAnsi(str: string): string {
+function stripAnsi(str: string): string {
   return str.replace(ANSI_RE, "");
 }
 

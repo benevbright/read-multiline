@@ -23,20 +23,22 @@ export interface PromptTheme {
   /**
    * How to render the prompt after submission.
    * - "clear": erase the prompt and input from the terminal (default)
+   * - "content": re-render prompt header + prefix, input lines without linePrefix
    * - "preserve": re-render with submitted-state prefix/linePrefix and styles
    * - "ellipsis": show only the first line, append "…" if multi-line
    * - number (e.g. 3): show up to N lines, append "…" if truncated
    */
-  submitRender?: "clear" | "preserve" | "ellipsis" | number;
+  submitRender?: "clear" | "content" | "preserve" | "ellipsis" | number;
 
   /**
    * How to render the prompt after cancellation (Ctrl+C) or EOF (Ctrl+D on empty input).
    * - "clear": erase the prompt and input from the terminal (default)
+   * - "content": re-render prompt header + prefix, input lines without linePrefix
    * - "preserve": re-render with cancelled-state prefix/linePrefix and styles
    * - "ellipsis": show only the first line, append "…" if multi-line
    * - number (e.g. 3): show up to N lines, append "…" if truncated
    */
-  cancelRender?: "clear" | "preserve" | "ellipsis" | number;
+  cancelRender?: "clear" | "content" | "preserve" | "ellipsis" | number;
 
   /** Style for validation error messages */
   error?: StyleTextFormat;
