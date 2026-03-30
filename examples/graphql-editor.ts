@@ -16,7 +16,9 @@ const RESET = "\x1b[0m";
 const BLUE = "\x1b[34m"; // keywords
 const CYAN = "\x1b[36m"; // type names (capitalized)
 const GREEN = "\x1b[32m"; // strings
-const YELLOW = "\x1b[33m"; // numbers, brackets
+const BRIGHT_YELLOW = "\x1b[93m"; // numbers
+const YELLOW = "\x1b[33m"; // braces {}
+const DIM_YELLOW = "\x1b[2;33m"; // parens (), brackets []
 const MAGENTA = "\x1b[35m"; // variables ($)
 const DIM = "\x1b[90m"; // comments, punctuation
 
@@ -73,7 +75,7 @@ function highlight(line: string): string {
           break;
         case TokenKind.INT:
         case TokenKind.FLOAT:
-          result += `${YELLOW}${text}${RESET}`;
+          result += `${BRIGHT_YELLOW}${text}${RESET}`;
           break;
         case TokenKind.STRING:
         case TokenKind.BLOCK_STRING:
@@ -85,11 +87,13 @@ function highlight(line: string): string {
           break;
         case TokenKind.BRACE_L:
         case TokenKind.BRACE_R:
+          result += `${YELLOW}${text}${RESET}`;
+          break;
         case TokenKind.PAREN_L:
         case TokenKind.PAREN_R:
         case TokenKind.BRACKET_L:
         case TokenKind.BRACKET_R:
-          result += `${YELLOW}${text}${RESET}`;
+          result += `${DIM_YELLOW}${text}${RESET}`;
           break;
         case TokenKind.BANG:
         case TokenKind.COLON:
@@ -158,8 +162,14 @@ function transform(state: TransformState, event: TransformEvent): TransformState
       newLines.splice(row + 1, 0, baseIndent + lines[row].trimStart());
       return { lines: newLines, row, col: innerIndent.length };
     } else if (endsWithOpen) {
+      // Auto-insert closing bracket on next line
+      const openChar = prevLine.trimEnd().slice(-1);
+      const closeChar = BRACKET_PAIRS[openChar] ?? "}";
       const indent = baseIndent + "  ";
-      return { lines: lines.with(row, indent + lines[row]), row, col: indent.length };
+      const newLines = [...lines];
+      newLines[row] = indent + lines[row];
+      newLines.splice(row + 1, 0, baseIndent + closeChar);
+      return { lines: newLines, row, col: indent.length };
     } else if (baseIndent && col === 0) {
       return { lines: lines.with(row, baseIndent + lines[row]), row, col: baseIndent.length };
     }
