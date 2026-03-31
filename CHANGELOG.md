@@ -1,5 +1,20 @@
 # @toiroakr/read-multiline
 
+## 0.3.0
+
+### Minor Changes
+
+- 1416098: Extend submitRender/cancelRender with "ellipsis" and number modes to control how many input lines are displayed after submission or cancellation
+
+### Patch Changes
+
+- 22a4b48: Add explicit node types to tsconfig.json for TypeScript 6 compatibility
+- d25b761: Add `highlight` and `transform` options to readMultiline
+
+  - `highlight`: per-line syntax highlighting callback returning ANSI-decorated strings. Takes precedence over `theme.input` styling. Preserved across all edit operations (insert, backspace, delete). Skipped during paste for performance.
+  - `transform`: post-edit state transformation callback (e.g., auto-close brackets, auto-indent). Receives `TransformState` and `TransformEvent`, returns modified state or `undefined`. Skipped during paste. Results validated with row/col clamping.
+  - Export `TransformState` and `TransformEvent` types for consumer use.
+
 ## 0.2.1
 
 ### Patch Changes
