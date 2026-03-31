@@ -7,6 +7,7 @@ import * as presets from "./presets/index.js";
 import {
   clearBelowEditor,
   clearScreen,
+  renderLine,
   setFooter,
   setStatusWithVisualState,
   tCol,
@@ -44,6 +45,8 @@ export type {
   SharedConfig,
   Stateful,
   StyleTextFormat,
+  TransformEvent,
+  TransformState,
   TTYInput,
 } from "./types.js";
 export { presets };
@@ -142,6 +145,8 @@ function readFromTTY(
       preferNewlineOnEnter = false,
       clearAfterSubmit = true,
       disabledKeys = [],
+      highlight,
+      transform,
       footer,
       helpFooter = true,
     } = options;
@@ -203,6 +208,8 @@ function readFromTTY(
       validateDebounceMs,
       preferNewlineOnEnter,
       disabledKeys: new Set(disabledKeys),
+      highlight,
+      transform,
       keyMap: {},
       buffering: false,
       writeBuffer: "",
@@ -246,9 +253,10 @@ function readFromTTY(
     }
 
     // Determine submitRender and cancelRender modes
-    const submitRender: "clear" | "preserve" | "ellipsis" | number =
+    const submitRender: "clear" | "content" | "preserve" | "ellipsis" | number =
       theme?.submitRender ?? (clearAfterSubmit ? "clear" : "preserve");
-    const cancelRender: "clear" | "preserve" | "ellipsis" | number = theme?.cancelRender ?? "clear";
+    const cancelRender: "clear" | "content" | "preserve" | "ellipsis" | number =
+      theme?.cancelRender ?? "clear";
 
     /** Erase all editor content (prompt header + input lines + status + footer) from the terminal */
     function clearEditorArea() {
@@ -346,9 +354,9 @@ function readFromTTY(
       const initLines = initialValue.split("\n");
       state.lines.length = 0;
       state.lines.push(...initLines);
-      w(state, applyStyle(initLines[0], theme?.input));
+      w(state, renderLine(state, 0));
       for (let i = 1; i < initLines.length; i++) {
-        w(state, "\n" + styledLinePrefix + applyStyle(initLines[i], theme?.input));
+        w(state, "\n" + styledLinePrefix + renderLine(state, i));
       }
       state.row = initLines.length - 1;
       state.col = initLines[state.row].length;
@@ -421,7 +429,7 @@ function renderStateChange(
   state: EditorState,
   theme: PromptTheme | undefined,
   renderState: "submitted" | "cancelled",
-  mode: "preserve" | "ellipsis" | number = "preserve",
+  mode: "content" | "preserve" | "ellipsis" | number = "preserve",
 ): void {
   // Move to top of editor (input lines + prompt header)
   const upCount = state.row + state.promptHeaderHeight;
@@ -431,7 +439,8 @@ function renderStateChange(
   // Rebuild prompt header and line prefix for the target state
   const header = buildPromptHeader(state.prefixOption, state.rawPrompt, theme, renderState);
   const headerHeight = computeHeaderHeight(header);
-  const linePrefix = buildStyledLinePrefix(state.linePrefixOption, theme, renderState);
+  const linePrefix =
+    mode === "content" ? "" : buildStyledLinePrefix(state.linePrefixOption, theme, renderState);
 
   // Choose answer style based on state
   const answerStyle =
@@ -448,10 +457,11 @@ function renderStateChange(
     w(state, "\n");
   }
 
-  // Draw input lines with line prefix and answer style
+  // Draw input lines: answerStyle takes priority, then highlight, then plain
   for (let i = 0; i < displayCount; i++) {
     if (i > 0) w(state, "\n");
-    w(state, linePrefix + applyStyle(state.lines[i], answerStyle));
+    const styledLine = answerStyle ? applyStyle(state.lines[i], answerStyle) : renderLine(state, i);
+    w(state, linePrefix + styledLine);
   }
 
   // Append ellipsis indicator if truncated

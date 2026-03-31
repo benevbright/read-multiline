@@ -23,20 +23,22 @@ export interface PromptTheme {
   /**
    * How to render the prompt after submission.
    * - "clear": erase the prompt and input from the terminal (default)
+   * - "content": re-render prompt header + prefix, input lines without linePrefix
    * - "preserve": re-render with submitted-state prefix/linePrefix and styles
    * - "ellipsis": show only the first line, append "…" if multi-line
    * - number (e.g. 3): show up to N lines, append "…" if truncated
    */
-  submitRender?: "clear" | "preserve" | "ellipsis" | number;
+  submitRender?: "clear" | "content" | "preserve" | "ellipsis" | number;
 
   /**
    * How to render the prompt after cancellation (Ctrl+C) or EOF (Ctrl+D on empty input).
    * - "clear": erase the prompt and input from the terminal (default)
+   * - "content": re-render prompt header + prefix, input lines without linePrefix
    * - "preserve": re-render with cancelled-state prefix/linePrefix and styles
    * - "ellipsis": show only the first line, append "…" if multi-line
    * - number (e.g. 3): show up to N lines, append "…" if truncated
    */
-  cancelRender?: "clear" | "preserve" | "ellipsis" | number;
+  cancelRender?: "clear" | "content" | "preserve" | "ellipsis" | number;
 
   /** Style for validation error messages */
   error?: StyleTextFormat;
@@ -132,6 +134,22 @@ export interface ReadMultilineOptions {
    */
   disabledKeys?: ModifiedEnterKey[];
 
+  /**
+   * Syntax highlighting function. Receives line text and 0-indexed line number,
+   * returns a string with ANSI escape sequences for display.
+   * Cursor position is always calculated from the plain text, not the highlighted output.
+   * When set, takes precedence over `theme.input` styling for line rendering.
+   */
+  highlight?: (line: string, lineIndex: number) => string;
+
+  /**
+   * Called after each edit operation. Receives the current editor content,
+   * cursor position, and what edit just occurred. Return a new state to
+   * transform the content, or undefined to leave it unchanged.
+   * Skipped during paste.
+   */
+  transform?: (state: TransformState, event: TransformEvent) => TransformState | undefined;
+
   /** Fixed footer text displayed below the editor. Appears below the status line. */
   footer?: string;
 
@@ -189,6 +207,20 @@ export interface HelpFooterDisplayOptions {
   /** Separator between items (e.g. " • "). When set, items are displayed inline instead of grid layout */
   separator?: string;
 }
+
+/** Minimal editor state passed to and returned from the transform callback. */
+export interface TransformState {
+  lines: string[];
+  row: number;
+  col: number;
+}
+
+/** Event describing what edit operation just occurred, passed to the transform callback. */
+export type TransformEvent =
+  | { type: "insert"; char: string }
+  | { type: "newline" }
+  | { type: "backspace" }
+  | { type: "delete" };
 
 /** Key combinations that can be used as modified Enter keys. These can be disabled via the disabledKeys option. */
 export type ModifiedEnterKey = "shift+enter" | "ctrl+enter" | "cmd+enter" | "alt+enter" | "ctrl+j";
@@ -278,6 +310,12 @@ export interface EditorState {
   validateDebounceMs: number;
   preferNewlineOnEnter: boolean;
   disabledKeys: Set<ModifiedEnterKey>;
+
+  // Highlight & transform
+  highlight: ((line: string, lineIndex: number) => string) | undefined;
+  transform:
+    | ((state: TransformState, event: TransformEvent) => TransformState | undefined)
+    | undefined;
 
   // Key map (built once during init)
   keyMap: Record<string, () => void>;

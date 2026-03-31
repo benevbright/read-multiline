@@ -1808,6 +1808,287 @@ describe("readMultiline (TTY mode)", () => {
     const afterClear = raw.slice(clearIdx + "\r\x1b[J".length);
     expect(afterClear).not.toContain("\n");
   });
+
+  // --- highlight option ---
+
+  it("applies highlight function to output", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line) => `\x1b[31m${line}\x1b[0m`,
+    });
+    input.send("hello");
+    input.send(KEY.ENTER);
+    const [result] = await promise;
+    expect(result).toBe("hello");
+    const raw = output.chunks.join("");
+    expect(raw).toContain("\x1b[31mhello\x1b[0m");
+  });
+
+  it("highlight does not affect submitted value", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line) => line.replace(/hello/, "\x1b[32mhello\x1b[0m"),
+    });
+    input.send("hello world");
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["hello world", null]);
+  });
+
+  it("highlight receives line index", async () => {
+    const indices: number[] = [];
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line, index) => {
+        indices.push(index);
+        return line;
+      },
+    });
+    input.send("a");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("b");
+    input.send(KEY.ENTER);
+    await promise;
+    expect(indices).toContain(0);
+    expect(indices).toContain(1);
+  });
+
+  it("highlight works with initialValue", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line) => `\x1b[33m${line}\x1b[0m`,
+      initialValue: "init",
+    });
+    const raw = output.chunks.join("");
+    expect(raw).toContain("\x1b[33minit\x1b[0m");
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["init", null]);
+  });
+
+  it("highlight works with undo/redo", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line) => `\x1b[31m${line}\x1b[0m`,
+    });
+    input.send("abc");
+    input.send(KEY.CTRL_Z);
+    input.send(KEY.CTRL_Y);
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["abc", null]);
+  });
+
+  it("highlight is preserved after backspace", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line) => `\x1b[31m${line}\x1b[0m`,
+    });
+    input.send("abc");
+    output.chunks.length = 0;
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["ab", null]);
+    const raw = output.chunks.join("");
+    expect(raw).toContain("\x1b[31m");
+  });
+
+  it("highlight is preserved after delete", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line) => `\x1b[31m${line}\x1b[0m`,
+    });
+    input.send("abc");
+    input.send(KEY.LEFT);
+    output.chunks.length = 0;
+    input.send(KEY.DELETE);
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["ab", null]);
+    const raw = output.chunks.join("");
+    expect(raw).toContain("\x1b[31m");
+  });
+
+  it("highlight is applied after paste", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line) => `\x1b[31m${line}\x1b[0m`,
+    });
+    output.chunks.length = 0;
+    input.send("\x1b[200~pasted\x1b[201~");
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["pasted", null]);
+    const raw = output.chunks.join("");
+    expect(raw).toContain("\x1b[31mpasted\x1b[0m");
+  });
+
+  // --- transform option ---
+
+  it("transform can auto-close brackets", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      transform(state, event) {
+        if (event.type === "insert" && event.char === "(") {
+          const { lines, row, col } = state;
+          const line = lines[row];
+          const newLine = line.slice(0, col) + ")" + line.slice(col);
+          return { lines: lines.with(row, newLine), row, col };
+        }
+      },
+    });
+    input.send("fn(");
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["fn()", null]);
+  });
+
+  it("transform can add indentation on newline", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      transform(state, event) {
+        if (event.type === "newline") {
+          const { lines, row, col } = state;
+          const prevLine = lines[row - 1];
+          const indent = prevLine.match(/^(\s*)/)?.[1] ?? "";
+          if (indent && col === 0) {
+            return { lines: lines.with(row, indent + lines[row]), row, col: indent.length };
+          }
+        }
+      },
+    });
+    input.send("  hello");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("world");
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["  hello\n  world", null]);
+  });
+
+  it("transform returning undefined is a no-op", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      transform() {
+        return undefined;
+      },
+    });
+    input.send("hello");
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["hello", null]);
+  });
+
+  it("transform is skipped during paste", async () => {
+    const calls: string[] = [];
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      transform(_state, event) {
+        calls.push(event.type);
+        return undefined;
+      },
+    });
+    input.send("\x1b[200~pasted\x1b[201~");
+    input.send(KEY.ENTER);
+    await promise;
+    // transform should not have been called during paste
+    expect(calls).not.toContain("insert");
+  });
+
+  it("transform receives correct event types", async () => {
+    const events: string[] = [];
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      transform(_state, event) {
+        events.push(event.type);
+        return undefined;
+      },
+    });
+    input.send("a"); // insert
+    input.send(KEY.SHIFT_ENTER); // newline
+    input.send("b"); // insert
+    input.send(KEY.BACKSPACE); // backspace
+    input.send(KEY.LEFT);
+    input.send(KEY.DELETE); // delete
+    input.send(KEY.ENTER);
+    await promise;
+    expect(events).toEqual(["insert", "newline", "insert", "backspace", "delete"]);
+  });
+
+  it("transform can perform multi-line operations (bracket expansion)", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      transform(state, event) {
+        if (event.type === "insert" && event.char === "{") {
+          const { lines, row, col } = state;
+          const line = lines[row];
+          const newLine = line.slice(0, col) + "}" + line.slice(col);
+          return { lines: lines.with(row, newLine), row, col };
+        }
+        if (event.type === "newline") {
+          const { lines, row, col } = state;
+          const prevLine = lines[row - 1];
+          if (prevLine.trimEnd().endsWith("{") && lines[row].trimStart().startsWith("}")) {
+            const indent = prevLine.match(/^(\s*)/)?.[1] ?? "";
+            const newLines = [...lines];
+            newLines[row] = indent + "  ";
+            newLines.splice(row + 1, 0, indent + lines[row].trimStart());
+            return { lines: newLines, row, col: indent.length + 2 };
+          }
+        }
+      },
+    });
+    input.send("if {");
+    input.send(KEY.SHIFT_ENTER);
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["if {\n  \n}", null]);
+  });
+
+  it("undo restores state before transform", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      transform(state, event) {
+        if (event.type === "insert" && event.char === "(") {
+          const { lines, row, col } = state;
+          const line = lines[row];
+          const newLine = line.slice(0, col) + ")" + line.slice(col);
+          return { lines: lines.with(row, newLine), row, col };
+        }
+      },
+    });
+    input.send("fn(");
+    input.send(KEY.CTRL_Z); // undo should revert "fn(" + transform ")"
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["", null]);
+  });
+
+  it("highlight and transform work together", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line) => `\x1b[36m${line}\x1b[0m`,
+      transform(state, event) {
+        if (event.type === "insert" && event.char === "(") {
+          const { lines, row, col } = state;
+          const line = lines[row];
+          return { lines: lines.with(row, line.slice(0, col) + ")" + line.slice(col)), row, col };
+        }
+      },
+    });
+    input.send("f(");
+    input.send(KEY.ENTER);
+    const [result] = await promise;
+    expect(result).toBe("f()");
+    const raw = output.chunks.join("");
+    // Highlighted output should contain the ANSI-wrapped version
+    expect(raw).toContain("\x1b[36m");
+  });
 });
 
 // --- cancelRender option ---

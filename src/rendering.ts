@@ -8,6 +8,12 @@ import {
 } from "./style.js";
 import type { EditorState, Snapshot } from "./types.js";
 
+/** Return the highlighted (or styled) text for a given line */
+export function renderLine(state: EditorState, rowIndex: number): string {
+  const line = state.lines[rowIndex];
+  return state.highlight ? state.highlight(line, rowIndex) : styledInput(state, line);
+}
+
 /** Write text to the output stream (or buffer if batching) */
 export function w(state: EditorState, text: string): void {
   if (state.buffering) {
@@ -197,9 +203,9 @@ export function redrawFrom(
 
   w(state, "\x1b[J");
 
-  w(state, styledInput(state, state.lines[fromRow]));
+  w(state, renderLine(state, fromRow));
   for (let i = fromRow + 1; i < state.lines.length; i++) {
-    w(state, "\n" + state.styledLinePrefix + styledInput(state, state.lines[i]));
+    w(state, "\n" + state.styledLinePrefix + renderLine(state, i));
   }
 
   const endRow = state.lines.length - 1;
@@ -235,9 +241,9 @@ function fullRedraw(state: EditorState, rewindHeaderHeight?: number): void {
   }
 
   // Draw all input lines with linePrefix
-  w(state, state.styledLinePrefix + styledInput(state, state.lines[0]) + "\x1b[K");
+  w(state, state.styledLinePrefix + renderLine(state, 0) + "\x1b[K");
   for (let i = 1; i < state.lines.length; i++) {
-    w(state, "\n" + state.styledLinePrefix + styledInput(state, state.lines[i]) + "\x1b[K");
+    w(state, "\n" + state.styledLinePrefix + renderLine(state, i) + "\x1b[K");
   }
   w(state, "\x1b[J");
   const endRow = state.lines.length - 1;
@@ -261,9 +267,9 @@ export function restoreSnapshot(state: EditorState, snap: Snapshot): void {
   w(state, "\r");
   w(state, `\x1b[${pW(state) + 1}G`);
   w(state, "\x1b[J");
-  w(state, styledInput(state, state.lines[0]));
+  w(state, renderLine(state, 0));
   for (let i = 1; i < state.lines.length; i++) {
-    w(state, "\n" + state.styledLinePrefix + styledInput(state, state.lines[i]));
+    w(state, "\n" + state.styledLinePrefix + renderLine(state, i));
   }
   const endRow = state.lines.length - 1;
   if (endRow > snap.row) w(state, `\x1b[${endRow - snap.row}A`);
