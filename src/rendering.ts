@@ -222,9 +222,10 @@ export function redrawFrom(
   w(state, `\x1b[${tCol(state, fromRow, 0)}G`);
 
   w(state, "\x1b[J");
-  // In inline prompt mode, write prompt header on row 0 only if we're still on row 0
-  // (the header was already written at init, so don't re-write it after moving to row 1+)
-  if (state.inlinePrompt && fromRow === 0 && state.row === 0) {
+  // In inline prompt mode, only write the prompt header if we're staying on row 0
+  // (fromRow=0 AND targetRow=0 means we haven't moved to a new line)
+  // This prevents prompt duplication when inserting newlines
+  if (state.inlinePrompt && fromRow === 0 && targetRow === 0) {
     w(state, state.promptHeader);
   }
   w(state, renderLine(state, fromRow));
