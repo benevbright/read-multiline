@@ -8,6 +8,11 @@ import {
 } from "./style.js";
 import type { EditorState, Snapshot } from "./types.js";
 
+/** Get the prompt header width for inline mode (0 if not inline) */
+function getPromptHeaderWidth(state: EditorState): number {
+  return state.inlinePrompt ? stringWidth(state.promptHeader) : 0;
+}
+
 /** Return the highlighted (or styled) text for a given line */
 export function renderLine(state: EditorState, rowIndex: number): string {
   const line = state.lines[rowIndex];
@@ -43,8 +48,17 @@ export function pW(state: EditorState): number {
   return state.linePrefixWidth;
 }
 
+/** Get the offset for row 0 (prompt header width in inline mode) */
+function pOffset(state: EditorState): number {
+  return state.inlinePrompt && state.row === 0 ? getPromptHeaderWidth(state) : 0;
+}
+
 /** Get 1-based terminal column from line start to code unit index, accounting for display width */
 export function tCol(state: EditorState, r: number, c: number): number {
+  // In inline prompt mode, row 0 starts with the prompt header (no linePrefix)
+  if (state.inlinePrompt && r === 0) {
+    return getPromptHeaderWidth(state) + stringWidth(state.lines[r].slice(0, c)) + 1;
+  }
   return pW(state) + stringWidth(state.lines[r].slice(0, c)) + 1;
 }
 
@@ -160,8 +174,14 @@ export function setVisualState(state: EditorState, visualState: "pending" | "err
     state.theme,
     visualState,
   );
-  state.promptHeaderHeight = computeHeaderHeight(state.promptHeader);
-  state.styledLinePrefix = buildStyledLinePrefix(state.linePrefixOption, state.theme, visualState);
+  // In inline mode, header is on same line as input
+  state.promptHeaderHeight = state.inlinePrompt ? 0 : computeHeaderHeight(state.promptHeader);
+  state.styledLinePrefix = buildStyledLinePrefix(
+    state.linePrefixOption,
+    state.theme,
+    visualState,
+    state.inlinePrompt,
+  );
   const rawLinePrefix = resolveStateful(state.linePrefixOption, visualState);
   state.linePrefixWidth = stringWidth(rawLinePrefix);
 }
@@ -203,6 +223,10 @@ export function redrawFrom(
 
   w(state, "\x1b[J");
 
+  // In inline prompt mode, row 0 starts with the prompt header
+  if (state.inlinePrompt && fromRow === 0) {
+    w(state, state.promptHeader);
+  }
   w(state, renderLine(state, fromRow));
   for (let i = fromRow + 1; i < state.lines.length; i++) {
     w(state, "\n" + state.styledLinePrefix + renderLine(state, i));
@@ -231,17 +255,28 @@ function fullRedraw(state: EditorState, rewindHeaderHeight?: number): void {
   w(state, "\r");
 
   // Draw prompt header if present
-  if (state.promptHeaderHeight > 0) {
-    const headerLines = state.promptHeader.split("\n");
-    for (let i = 0; i < headerLines.length; i++) {
-      if (i > 0) w(state, "\n");
-      w(state, headerLines[i] + "\x1b[K");
+  if (state.promptHeaderHeight > 0 || state.inlinePrompt) {
+    // In inline mode, draw header inline (no newline after)
+    // In non-inline mode, draw header and newline after
+    if (state.inlinePrompt) {
+      w(state, state.promptHeader);
+    } else {
+      const headerLines = state.promptHeader.split("\n");
+      for (let i = 0; i < headerLines.length; i++) {
+        if (i > 0) w(state, "\n");
+        w(state, headerLines[i] + "\x1b[K");
+      }
+      w(state, "\n");
     }
-    w(state, "\n");
   }
 
   // Draw all input lines with linePrefix
-  w(state, state.styledLinePrefix + renderLine(state, 0) + "\x1b[K");
+  // In inline mode, row 0 starts with the prompt header (no linePrefix)
+  if (state.inlinePrompt) {
+    w(state, renderLine(state, 0) + "\x1b[K");
+  } else {
+    w(state, state.styledLinePrefix + renderLine(state, 0) + "\x1b[K");
+  }
   for (let i = 1; i < state.lines.length; i++) {
     w(state, "\n" + state.styledLinePrefix + renderLine(state, i) + "\x1b[K");
   }
@@ -265,8 +300,14 @@ export function restoreSnapshot(state: EditorState, snap: Snapshot): void {
   state.lines.push(...snap.lines);
   if (state.row > 0) w(state, `\x1b[${state.row}A`);
   w(state, "\r");
-  w(state, `\x1b[${pW(state) + 1}G`);
+  // In inline mode, row 0 starts with prompt header (no linePrefix), otherwise use pW
+  const col = state.inlinePrompt ? getPromptHeaderWidth(state) : pW(state);
+  w(state, `\x1b[${col + 1}G`);
   w(state, "\x1b[J");
+  // In inline mode, row 0 starts with the prompt header
+  if (state.inlinePrompt) {
+    w(state, state.promptHeader);
+  }
   w(state, renderLine(state, 0));
   for (let i = 1; i < state.lines.length; i++) {
     w(state, "\n" + state.styledLinePrefix + renderLine(state, i));

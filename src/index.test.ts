@@ -2450,3 +2450,73 @@ describe("createPrompt", () => {
     expect(raw).toContain("$ ");
   });
 });
+
+describe("inlinePrompt option", () => {
+  let input: ReturnType<typeof createTTYInput>;
+  let output: ReturnType<typeof createNullOutput>;
+
+  beforeEach(() => {
+    input = createTTYInput();
+    output = createNullOutput();
+  });
+
+  it("renders prompt and input on the same line", async () => {
+    const promise = readMultiline("Name:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      inlinePrompt: true,
+      clearAfterSubmit: false,
+    });
+    input.send("Tom");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["Tom", null]);
+
+    // Check that the output doesn't have a newline after the prompt
+    const raw = output.chunks.join("");
+    // Find "Name:" and see what comes after
+    const nameIndex = raw.indexOf("Name:");
+    const afterName = raw.slice(nameIndex + 5); // 5 = len("Name:")
+    // In inline mode, "Tom" should directly follow "Name:" (possibly with some ANSI codes in between)
+    // The key is that there's no "\n" between "Name:" and "Tom"
+    const betweenNameAndTom = afterName.slice(0, afterName.indexOf("Tom"));
+    expect(betweenNameAndTom).not.toContain("\n");
+  });
+
+  it("works with submitRender: preserve", async () => {
+    const promise = readMultiline("Name:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      inlinePrompt: true,
+      theme: { submitRender: "preserve" as const },
+    });
+    input.send("Alice");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["Alice", null]);
+  });
+
+  it("renders second line with linePrefix", async () => {
+    const promise = readMultiline("Bio:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      linePrefix: "  ",
+      inlinePrompt: true,
+      clearAfterSubmit: false,
+    });
+    input.send("Line1");
+    input.send(KEY.SHIFT_ENTER); // Insert newline
+    input.send("Line2");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["Line1\nLine2", null]);
+
+    // Verify the result contains both lines
+    const raw = output.chunks.join("");
+    expect(raw).toContain("Line1");
+    expect(raw).toContain("Line2");
+  });
+});

@@ -171,6 +171,23 @@ export interface ReadMultilineOptions {
    * preferNewlineOnEnter and disabledKeys are inherited from the parent options.
    */
   helpFooter?: boolean | HelpFooterDisplayOptions;
+
+  /**
+   * When true, render the prompt and input on the same line (inline mode).
+   * - The prompt prefix and message appear before the input on the first line.
+   * - Subsequent lines still use the linePrefix.
+   * - This is useful for single-line or short inputs where you want the prompt
+   *   and input to be visually connected.
+   *
+   * @example
+   * // Default (prompt on own line):
+   * // > Enter your message:
+   * //   [input here]
+   * //
+   * // With inlinePrompt: true:
+   * // > Enter your message: [input here]
+   */
+  inlinePrompt?: boolean;
 }
 
 /** Built-in action names available for the help footer items configuration. */
@@ -310,6 +327,7 @@ export interface EditorState {
   validateDebounceMs: number;
   preferNewlineOnEnter: boolean;
   disabledKeys: Set<ModifiedEnterKey>;
+  inlinePrompt: boolean;
 
   // Highlight & transform
   highlight: ((line: string, lineIndex: number) => string) | undefined;

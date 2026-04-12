@@ -149,6 +149,7 @@ function readFromTTY(
       transform,
       footer,
       helpFooter = true,
+      inlinePrompt = false,
     } = options;
 
     // Resolve linePrefix: defaults to prefix
@@ -156,8 +157,14 @@ function readFromTTY(
 
     // Build pending-state prompt header and line prefix
     const promptHeader = buildPromptHeader(prefixOption, rawPrompt, theme, "pending");
-    const promptHeaderHeight = computeHeaderHeight(promptHeader);
-    const styledLinePrefix = buildStyledLinePrefix(resolvedLinePrefixOption, theme, "pending");
+    // In inline mode, the header is on the same line as input, so header height is 0
+    const promptHeaderHeight = inlinePrompt ? 0 : computeHeaderHeight(promptHeader);
+    const styledLinePrefix = buildStyledLinePrefix(
+      resolvedLinePrefixOption,
+      theme,
+      "pending",
+      inlinePrompt,
+    );
     const rawLinePrefix = resolveStateful(resolvedLinePrefixOption, "pending");
     const linePrefixWidth = stringWidth(rawLinePrefix);
 
@@ -210,6 +217,7 @@ function readFromTTY(
       disabledKeys: new Set(disabledKeys),
       highlight,
       transform,
+      inlinePrompt,
       keyMap: {},
       buffering: false,
       writeBuffer: "",
@@ -341,13 +349,17 @@ function readFromTTY(
 
     // --- Initialization ---
 
-    // Draw prompt header line
-    if (promptHeaderHeight > 0) {
+    // Draw prompt header line (always in inline mode, conditionally otherwise)
+    const showHeader = promptHeaderHeight > 0 || inlinePrompt;
+    if (showHeader) {
       w(state, promptHeader);
-      w(state, "\n");
+      // In inline mode, input follows on the same line (no newline after prompt)
+      if (!inlinePrompt) {
+        w(state, "\n");
+      }
     }
 
-    // Draw first input line with linePrefix
+    // Draw first input line with linePrefix (empty in inline mode since header is inline)
     w(state, styledLinePrefix);
 
     if (initialValue) {
@@ -432,15 +444,19 @@ function renderStateChange(
   mode: "content" | "preserve" | "ellipsis" | number = "preserve",
 ): void {
   // Move to top of editor (input lines + prompt header)
-  const upCount = state.row + state.promptHeaderHeight;
+  // In inline mode, header is on same line as input, so use 0 for height
+  const upCount = state.row + (state.inlinePrompt ? 0 : state.promptHeaderHeight);
   if (upCount > 0) w(state, `\x1b[${upCount}A`);
   w(state, "\r\x1b[J");
 
   // Rebuild prompt header and line prefix for the target state
   const header = buildPromptHeader(state.prefixOption, state.rawPrompt, theme, renderState);
-  const headerHeight = computeHeaderHeight(header);
+  // In inline mode, header is on same line as input
+  const headerHeight = state.inlinePrompt ? 0 : computeHeaderHeight(header);
   const linePrefix =
-    mode === "content" ? "" : buildStyledLinePrefix(state.linePrefixOption, theme, renderState);
+    mode === "content"
+      ? ""
+      : buildStyledLinePrefix(state.linePrefixOption, theme, renderState, state.inlinePrompt);
 
   // Choose answer style based on state
   const answerStyle =
@@ -452,16 +468,23 @@ function renderStateChange(
   const truncated = state.lines.length > displayCount;
 
   // Draw prompt header
-  if (headerHeight > 0) {
+  // In inline mode, always draw header (on same line as input)
+  // In non-inline mode, only draw if headerHeight > 0
+  if (headerHeight > 0 || state.inlinePrompt) {
     w(state, header);
-    w(state, "\n");
+    // In inline mode, input follows on the same line (no newline after header)
+    if (!state.inlinePrompt) {
+      w(state, "\n");
+    }
   }
 
   // Draw input lines: answerStyle takes priority, then highlight, then plain
   for (let i = 0; i < displayCount; i++) {
     if (i > 0) w(state, "\n");
+    // In inline mode, row 0 has no prefix (header is already inline)
+    const prefix = state.inlinePrompt && i === 0 ? "" : linePrefix;
     const styledLine = answerStyle ? applyStyle(state.lines[i], answerStyle) : renderLine(state, i);
-    w(state, linePrefix + styledLine);
+    w(state, prefix + styledLine);
   }
 
   // Append ellipsis indicator if truncated
