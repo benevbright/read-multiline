@@ -2536,4 +2536,116 @@ describe("inlinePrompt option", () => {
       }),
     ).rejects.toThrow(/single-line/);
   });
+
+  it("merges lines correctly when backspacing at the start of the second line", async () => {
+    const promise = readMultiline("Name:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      linePrefix: "  ",
+      inlinePrompt: true,
+      clearAfterSubmit: false,
+    });
+    input.send("Hello");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("World");
+    // Cursor is at end of "World" on row 1; move to start of row 1 and backspace to merge.
+    input.send(KEY.HOME);
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["HelloWorld", null]);
+  });
+
+  it("preserves the inline display across undo/redo without duplicating the prompt header", async () => {
+    const promise = readMultiline("Name:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      inlinePrompt: true,
+      clearAfterSubmit: false,
+    });
+    input.send("AB");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("CD");
+    input.send(KEY.CTRL_Z); // undo
+    input.send(KEY.CTRL_Y); // redo
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result[1]).toBeNull();
+
+    // With clearAfterSubmit:false (preserve mode), the prompt header is emitted at
+    // initialization and once more by renderStateChange on submit. Any additional
+    // occurrences would indicate a regression in restoreSnapshot / redrawFrom where
+    // the inline header gets re-emitted mid-edit.
+    const visible = output.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+    const occurrences = visible.match(/Name:/g)?.length ?? 0;
+    expect(occurrences).toBeLessThanOrEqual(2);
+  });
+
+  it("redraws correctly after Ctrl+L clearScreen", async () => {
+    const promise = readMultiline("Name:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      inlinePrompt: true,
+      clearAfterSubmit: false,
+    });
+    input.send("Tom");
+    input.send(KEY.CTRL_L); // triggers fullRedraw inline path
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["Tom", null]);
+  });
+
+  it("renders linePrefix on submitted output with preserve mode", async () => {
+    const promise = readMultiline("Bio:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      linePrefix: "  ",
+      inlinePrompt: true,
+      theme: { submitRender: "preserve" as const },
+    });
+    input.send("Line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("Line2");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["Line1\nLine2", null]);
+
+    // After renderStateChange, the second line should still be prefixed by the
+    // configured linePrefix in the final post-submit output.
+    const visible = output.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+    // Look for the final submitted block: "Bio:Line1\n  Line2"
+    expect(visible).toMatch(/Bio:[^\n]*Line1\n {2}Line2/);
+  });
+
+  it("transitions to error state without losing linePrefix on subsequent lines", async () => {
+    const promise = readMultiline("Name:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      linePrefix: "  ",
+      inlinePrompt: true,
+      clearAfterSubmit: false,
+      validate: (v) => (v.includes("bad") ? "nope" : null),
+    });
+    input.send("ok");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("bad");
+    input.send(KEY.ENTER); // triggers validation error → setVisualState("error")
+    // Recover: delete "bad" → "ba" is fine, clear error on next submit
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.BACKSPACE);
+    input.send("fine");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["ok\nfine", null]);
+
+    // Error-state redraw must not strip the linePrefix from the second line.
+    const visible = output.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+    expect(visible).toMatch(/ok[\s\S]*?\n {2}/);
+  });
 });
