@@ -126,18 +126,26 @@ With `inlinePrompt: true`, the prompt header and the first input line share a si
 [linePrefix][line 2]         ← subsequent lines keep the normal linePrefix
 ```
 
-Combine with a `Stateful` `prefix` and `theme.submitRender: "preserve"` to get an inline prompt that transitions its prefix on submit:
+Combine with a `Stateful` `prefix` and `theme.submitRender: "preserve"` to get an inline prompt that transitions its prefix on submit. Subsequent lines (inserted via `Shift+Enter` / `Ctrl+J`) are prefixed with `linePrefix`:
 
 ```typescript
-await readMultiline("Enter your name:", {
+await readMultiline("Bio:", {
   inlinePrompt: true,
   prefix: { pending: "> ", submitted: "✔ " },
+  linePrefix: "  ",
   theme: { submitRender: "preserve" },
 });
 
-// Before typing:  > Enter your name:
-// While editing:  > Enter your name: Tom
-// After submit:   ✔ Enter your name: Tom
+// Before typing:
+//   > Bio:
+//
+// While editing (after Shift+Enter between lines):
+//   > Bio: Hello, I'm Tom.
+//     I like TypeScript.
+//
+// After submit:
+//   ✔ Bio: Hello, I'm Tom.
+//     I like TypeScript.
 ```
 
 `inlinePrompt` requires the prompt header to render on a single terminal line. If `prefix` or `prompt` contain a newline, `readMultiline` throws at call time. See `examples/inline-prompt.ts` for a full runnable demo.
