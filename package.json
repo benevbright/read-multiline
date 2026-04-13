@@ -1,6 +1,6 @@
 {
-  "name": "@toiroakr/read-multiline",
-  "version": "0.3.0",
+  "name": "@benevbright/read-multiline",
+  "version": "0.3.1-beta.0",
   "description": "Simple multi-line input reader for Node.js terminals",
   "keywords": [
     "cli",
@@ -14,7 +14,7 @@
   "author": "",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/toiroakr/read-multiline.git"
+    "url": "git+https://github.com/benevbright/read-multiline.git"
   },
   "files": [
     "dist"
