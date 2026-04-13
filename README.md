@@ -126,10 +126,10 @@ With `inlinePrompt: true`, the prompt header and the first input line share a si
 [linePrefix][line 2]         ← subsequent lines keep the normal linePrefix
 ```
 
-Combine with a `Stateful` `prefix` and `theme.submitRender: "preserve"` to get an inline prompt that transitions its prefix on submit. Subsequent lines (inserted via `Shift+Enter` / `Ctrl+J`) are prefixed with `linePrefix`:
+Inline mode concatenates `prefix + prompt + input` with no implicit separator — include any desired trailing space in the prompt text. Combine with a `Stateful` `prefix` and `theme.submitRender: "preserve"` to get an inline prompt that transitions its prefix on submit. Subsequent lines (inserted via `Shift+Enter` / `Ctrl+J`) are prefixed with `linePrefix`:
 
 ```typescript
-await readMultiline("Bio:", {
+await readMultiline("Bio: ", {
   inlinePrompt: true,
   prefix: { pending: "> ", submitted: "✔ " },
   linePrefix: "  ",
@@ -148,7 +148,7 @@ await readMultiline("Bio:", {
 //     I like TypeScript.
 ```
 
-`inlinePrompt` requires the prompt header to render on a single terminal line. If `prefix` or `prompt` contain a newline, `readMultiline` throws at call time. See `examples/inline-prompt.ts` for a full runnable demo.
+`inlinePrompt` requires the prompt header to render on a single terminal line. If `prefix` or `prompt` (including any `Stateful` prefix variant) contains a newline, `readMultiline` throws at call time. See `examples/inline-prompt.ts` for a full runnable demo.
 
 ### `Stateful<T>`
 

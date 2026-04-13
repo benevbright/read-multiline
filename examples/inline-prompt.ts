@@ -1,7 +1,9 @@
 /**
  * Example: inlinePrompt option
  *
- * Reproduces the behavior documented in the PR description:
+ * Reproduces the behavior documented in the PR description. Note that inline
+ * mode concatenates `prefix + prompt + input` with no implicit separator — the
+ * trailing space below comes from the prompt string itself.
  *
  *   Before typing:   > Enter your name:
  *   While editing:   > Enter your name: Tom
@@ -32,7 +34,7 @@ function printResult(label: string, value: string): void {
 console.log("=== 1. inlinePrompt with a stateful prefix (matches PR Behavior) ===");
 console.log("Type a name and press Enter. Watch the prefix change to ✔ on submit.\n");
 
-const [name, err1] = await readMultiline("Enter your name:", {
+const [name, err1] = await readMultiline("Enter your name: ", {
   prefix: { pending: "> ", submitted: "✔ ", cancelled: "✖ " },
   linePrefix: "  ",
   inlinePrompt: true,
@@ -55,7 +57,7 @@ else printResult("name", name);
 console.log("=== 2. Multi-line inline input (Shift+Enter / Ctrl+J for newline) ===");
 console.log("Type a bio across multiple lines. At least 3 characters required.\n");
 
-const [bio, err2] = await readMultiline("Bio:", {
+const [bio, err2] = await readMultiline("Bio: ", {
   prefix: { pending: "> ", submitted: "✔ " },
   linePrefix: "  ",
   inlinePrompt: true,
@@ -75,7 +77,7 @@ else printResult("bio", bio);
 
 console.log("=== 3. inlinePrompt: false (default) — same prompt for comparison ===\n");
 
-const [name2, err3] = await readMultiline("Enter your name:", {
+const [name2, err3] = await readMultiline("Enter your name: ", {
   prefix: { pending: "> ", submitted: "✔ " },
   linePrefix: "  ",
   theme: {

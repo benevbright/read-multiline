@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
+import { stripVTControlCharacters } from "node:util";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPrompt, readMultiline, type TTYInput } from "./index.js";
 
@@ -2461,7 +2462,7 @@ describe("inlinePrompt option", () => {
   });
 
   it("renders prompt and input on the same line", async () => {
-    const promise = readMultiline("Name:", {
+    const promise = readMultiline("Name: ", {
       input,
       output: output.stream,
       prefix: "> ",
@@ -2473,15 +2474,12 @@ describe("inlinePrompt option", () => {
     const result = await promise;
     expect(result).toEqual(["Tom", null]);
 
-    // Check that the output doesn't have a newline after the prompt
-    const raw = output.chunks.join("");
-    // Find "Name:" and see what comes after
-    const nameIndex = raw.indexOf("Name:");
-    const afterName = raw.slice(nameIndex + 5); // 5 = len("Name:")
-    // In inline mode, "Tom" should directly follow "Name:" (possibly with some ANSI codes in between)
-    // The key is that there's no "\n" between "Name:" and "Tom"
-    const betweenNameAndTom = afterName.slice(0, afterName.indexOf("Tom"));
-    expect(betweenNameAndTom).not.toContain("\n");
+    // After stripping VT control sequences, "Name: Tom" must appear as a
+    // single uninterrupted (newline-free) segment. Using a single regex
+    // gives an atomic "exists AND no newline between" assertion, guarding
+    // against silent false positives when either substring is missing.
+    const visible = stripVTControlCharacters(output.chunks.join(""));
+    expect(visible).toMatch(/Name: Tom/);
   });
 
   it("works with submitRender: preserve", async () => {
@@ -2514,16 +2512,14 @@ describe("inlinePrompt option", () => {
     const result = await promise;
     expect(result).toEqual(["Line1\nLine2", null]);
 
-    // Verify the result contains both lines
-    const raw = output.chunks.join("");
-    expect(raw).toContain("Line1");
-    expect(raw).toContain("Line2");
-    // Strip ANSI escape sequences to inspect visible text and assert that the
+    // Strip VT control sequences to inspect visible text and assert that the
     // configured linePrefix ("  ") precedes the second line. This guards against
     // regressions where inlinePrompt accidentally suppresses prefixes for
     // subsequent lines.
-    const visible = raw.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
-    expect(visible).toMatch(/Line1[\s\S]*?\n  Line2/);
+    const visible = stripVTControlCharacters(output.chunks.join(""));
+    expect(visible).toContain("Line1");
+    expect(visible).toContain("Line2");
+    expect(visible).toMatch(/Line1[\s\S]*?\n {2}Line2/);
   });
 
   it("throws when inlinePrompt is used with a multi-line prompt", async () => {
@@ -2532,6 +2528,19 @@ describe("inlinePrompt option", () => {
         input,
         output: output.stream,
         prefix: "> ",
+        inlinePrompt: true,
+      }),
+    ).rejects.toThrow(/single-line/);
+  });
+
+  it("throws when a non-pending Stateful prefix variant contains a newline", async () => {
+    // Only the submitted variant has a newline. If we validated just the
+    // pending state, this call would pass and later break renderStateChange.
+    await expect(
+      readMultiline("Name: ", {
+        input,
+        output: output.stream,
+        prefix: { pending: "> ", submitted: "✔\n" },
         inlinePrompt: true,
       }),
     ).rejects.toThrow(/single-line/);
@@ -2578,7 +2587,7 @@ describe("inlinePrompt option", () => {
     // initialization and once more by renderStateChange on submit. Any additional
     // occurrences would indicate a regression in restoreSnapshot / redrawFrom where
     // the inline header gets re-emitted mid-edit.
-    const visible = output.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+    const visible = stripVTControlCharacters(output.chunks.join(""));
     const occurrences = visible.match(/Name:/g)?.length ?? 0;
     expect(occurrences).toBeLessThanOrEqual(2);
   });
@@ -2616,7 +2625,7 @@ describe("inlinePrompt option", () => {
 
     // After renderStateChange, the second line should still be prefixed by the
     // configured linePrefix in the final post-submit output.
-    const visible = output.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+    const visible = stripVTControlCharacters(output.chunks.join(""));
     // Look for the final submitted block: "Bio:Line1\n  Line2"
     expect(visible).toMatch(/Bio:[^\n]*Line1\n {2}Line2/);
   });
@@ -2645,12 +2654,15 @@ describe("inlinePrompt option", () => {
     expect(result).toEqual(["ok\nfine", null]);
 
     // Error-state redraw must not strip the linePrefix from the second line.
-    const visible = output.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+    const visible = stripVTControlCharacters(output.chunks.join(""));
     expect(visible).toMatch(/ok[\s\S]*?\n {2}/);
   });
 
   it("transitions the prefix from pending to submitted in inline mode (PR Behavior)", async () => {
-    const promise = readMultiline("Enter your name:", {
+    // Inline mode concatenates `prefix + prompt + input` verbatim, so the
+    // prompt string itself carries the trailing space that separates the
+    // prompt from the input in the rendered output.
+    const promise = readMultiline("Enter your name: ", {
       input,
       output: output.stream,
       prefix: { pending: "> ", submitted: "✔ " },
@@ -2664,12 +2676,11 @@ describe("inlinePrompt option", () => {
 
     // After submit with preserve mode, the final rendered line should read
     // "✔ Enter your name: Tom" — matching the "After submit" behavior in the
-    // PR description. Strip ANSI to compare visible characters only.
-    const visible = output.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
-    expect(visible).toContain("✔ Enter your name:Tom");
-    // And the pending-state "> " prefix must no longer appear on the final line.
-    // (It may still appear in the pre-submit portion of the stream — we only
-    // assert that the submitted block has the ✔ prefix.)
-    expect(visible).toMatch(/✔ Enter your name:[^\n]*Tom/);
+    // PR description. Strip VT control sequences to compare visible text only.
+    const visible = stripVTControlCharacters(output.chunks.join(""));
+    expect(visible).toContain("✔ Enter your name: Tom");
+    // And the submitted block must use the ✔ prefix (the pending "> " prefix
+    // may still appear earlier in the stream from the pre-submit render).
+    expect(visible).toMatch(/✔ Enter your name: [^\n]*Tom/);
   });
 });

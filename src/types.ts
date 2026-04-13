@@ -176,15 +176,20 @@ export interface ReadMultilineOptions {
    * When true, render the prompt and input on the same line (inline mode).
    * - The prompt prefix and message appear before the input on the first line.
    * - Subsequent lines still use the linePrefix.
-   * - This is useful for single-line or short inputs where you want the prompt
-   *   and input to be visually connected.
+   * - Inline mode concatenates `prefix + prompt + input` with no implicit
+   *   separator — include any trailing space in the prompt text yourself.
+   * - The prompt header must render on a single terminal line; passing a prompt
+   *   (or a `Stateful` prefix variant) that contains a newline throws at call time.
+   * - Useful for single-line or short inputs where you want the prompt and
+   *   input to be visually connected.
    *
    * @example
    * // Default (prompt on own line):
    * // > Enter your message:
    * //   [input here]
    * //
-   * // With inlinePrompt: true:
+   * // With inlinePrompt: true and a prompt ending in a space:
+   * //   readMultiline("Enter your message: ", { inlinePrompt: true })
    * // > Enter your message: [input here]
    */
   inlinePrompt?: boolean;

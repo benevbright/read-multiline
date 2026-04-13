@@ -157,10 +157,21 @@ function readFromTTY(
 
     // Build pending-state prompt header and line prefix
     const promptHeader = buildPromptHeader(prefixOption, rawPrompt, theme, "pending");
-    if (inlinePrompt && /[\r\n]/.test(promptHeader)) {
-      throw new Error(
-        "inlinePrompt requires a single-line prompt header (no newline in prefix or prompt).",
-      );
+    if (inlinePrompt) {
+      // Validate every state the header may render in, not just "pending":
+      // a Stateful prefix could embed a newline in submitted/cancelled/error
+      // variants and later break renderStateChange / setVisualState layout.
+      for (const visualState of ["pending", "submitted", "cancelled", "error"] as const) {
+        const header =
+          visualState === "pending"
+            ? promptHeader
+            : buildPromptHeader(prefixOption, rawPrompt, theme, visualState);
+        if (/[\r\n]/.test(header)) {
+          throw new Error(
+            "inlinePrompt requires a single-line prompt header (no newline in prefix or prompt).",
+          );
+        }
+      }
     }
     // In inline mode, the header is on the same line as input, so header height is 0
     const promptHeaderHeight = inlinePrompt ? 0 : computeHeaderHeight(promptHeader);
