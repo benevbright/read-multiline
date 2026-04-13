@@ -23,6 +23,7 @@ Simple multi-line input reader for Node.js terminals. Solves the limitation of N
 - Non-TTY (pipe) input support
 - Theme/style system with state-dependent styling
 - Built-in presets for `@inquirer/prompts` and `@clack/prompts`
+- Optional `inlinePrompt` to render the prompt and the first input line on the same terminal line
 - `createPrompt()` factory for reusable shared configuration
 - Zero dependencies
 
@@ -83,25 +84,26 @@ Returns a `ReadMultilineResult` tuple:
 | --------- | -------- | --------------------------------------------- |
 | `prompt`  | `string` | Prompt message on the header line above input |
 
-| Option                   | Type                                             | Default          | Description                                                                              |
-| ------------------------ | ------------------------------------------------ | ---------------- | ---------------------------------------------------------------------------------------- |
-| `prefix`                 | `Stateful<string>`                               | `"> "`           | Prefix before the prompt message. Can be state-dependent                                 |
-| `linePrefix`             | `Stateful<string>`                               | same as `prefix` | Prefix for each input line. Can be state-dependent                                       |
-| `theme`                  | `PromptTheme`                                    | `undefined`      | Theme for styling prompt elements                                                        |
-| `input`                  | `TTYInput`                                       | `process.stdin`  | Input stream                                                                             |
-| `output`                 | `WritableStream`                                 | `process.stdout` | Output stream                                                                            |
-| `initialValue`           | `string`                                         | `undefined`      | Pre-populate the input                                                                   |
-| `history`                | `string[] \| HistoryOptions`                     | `[]`             | History entries or file-based persistent history                                         |
-| `historyArrowNavigation` | `"single" \| "double" \| "disabled"`             | `"single"`       | How Up/Down interacts with history at boundaries                                         |
-| `maxLines`               | `number`                                         | `undefined`      | Maximum number of lines                                                                  |
-| `maxLength`              | `number`                                         | `undefined`      | Maximum total character count                                                            |
-| `validate`               | `(value: string) => string \| undefined \| null` | `undefined`      | Validation function (return error message to reject)                                     |
-| `validateDebounceMs`     | `number`                                         | `300`            | Debounce interval for live validation                                                    |
-| `preferNewlineOnEnter`   | `boolean`                                        | `false`          | `true`: Enter=newline, `false`: Enter=submit                                             |
-| `disabledKeys`           | `ModifiedEnterKey[]`                             | `[]`             | Key combos to disable                                                                    |
-| `clearAfterSubmit`       | `boolean`                                        | `true`           | **Deprecated.** Clear input from terminal after submit. Use `theme.submitRender` instead |
-| `footer`                 | `string`                                         | `undefined`      | Fixed footer text below the editor                                                       |
-| `helpFooter`             | `boolean \| HelpFooterDisplayOptions`            | `true`           | Auto-generated key bindings help footer                                                  |
+| Option                   | Type                                             | Default          | Description                                                                                             |
+| ------------------------ | ------------------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------- |
+| `prefix`                 | `Stateful<string>`                               | `"> "`           | Prefix before the prompt message. Can be state-dependent                                                |
+| `linePrefix`             | `Stateful<string>`                               | same as `prefix` | Prefix for each input line. Can be state-dependent                                                      |
+| `theme`                  | `PromptTheme`                                    | `undefined`      | Theme for styling prompt elements                                                                       |
+| `input`                  | `TTYInput`                                       | `process.stdin`  | Input stream                                                                                            |
+| `output`                 | `WritableStream`                                 | `process.stdout` | Output stream                                                                                           |
+| `initialValue`           | `string`                                         | `undefined`      | Pre-populate the input                                                                                  |
+| `history`                | `string[] \| HistoryOptions`                     | `[]`             | History entries or file-based persistent history                                                        |
+| `historyArrowNavigation` | `"single" \| "double" \| "disabled"`             | `"single"`       | How Up/Down interacts with history at boundaries                                                        |
+| `maxLines`               | `number`                                         | `undefined`      | Maximum number of lines                                                                                 |
+| `maxLength`              | `number`                                         | `undefined`      | Maximum total character count                                                                           |
+| `validate`               | `(value: string) => string \| undefined \| null` | `undefined`      | Validation function (return error message to reject)                                                    |
+| `validateDebounceMs`     | `number`                                         | `300`            | Debounce interval for live validation                                                                   |
+| `preferNewlineOnEnter`   | `boolean`                                        | `false`          | `true`: Enter=newline, `false`: Enter=submit                                                            |
+| `disabledKeys`           | `ModifiedEnterKey[]`                             | `[]`             | Key combos to disable                                                                                   |
+| `clearAfterSubmit`       | `boolean`                                        | `true`           | **Deprecated.** Clear input from terminal after submit. Use `theme.submitRender` instead                |
+| `footer`                 | `string`                                         | `undefined`      | Fixed footer text below the editor                                                                      |
+| `helpFooter`             | `boolean \| HelpFooterDisplayOptions`            | `true`           | Auto-generated key bindings help footer                                                                 |
+| `inlinePrompt`           | `boolean`                                        | `false`          | Render the prompt header and the first input line on the same line. See [Inline prompt](#inline-prompt) |
 
 ### Layout
 
@@ -114,6 +116,39 @@ The prompt renders as two visual areas: a **header line** and **input lines**.
 ```
 
 When `prompt` is empty and `prefix` is empty, no header line is shown.
+
+#### Inline prompt
+
+With `inlinePrompt: true`, the prompt header and the first input line share a single terminal line. Subsequent lines (from `Shift+Enter` / `Ctrl+J`) still use `linePrefix`:
+
+```
+[prefix][prompt][line 1]     ← header and first input on the same line
+[linePrefix][line 2]         ← subsequent lines keep the normal linePrefix
+```
+
+Inline mode concatenates `prefix + prompt + input` with no implicit separator — include any desired trailing space in the prompt text. Combine with a `Stateful` `prefix` and `theme.submitRender: "preserve"` to get an inline prompt that transitions its prefix on submit. Subsequent lines (inserted via `Shift+Enter` / `Ctrl+J`) are prefixed with `linePrefix`:
+
+```typescript
+await readMultiline("Bio: ", {
+  inlinePrompt: true,
+  prefix: { pending: "> ", submitted: "✔ " },
+  linePrefix: "  ",
+  theme: { submitRender: "preserve" },
+});
+
+// Before typing:
+//   > Bio:
+//
+// While editing (after Shift+Enter between lines):
+//   > Bio: Hello, I'm Tom.
+//     I like TypeScript.
+//
+// After submit:
+//   ✔ Bio: Hello, I'm Tom.
+//     I like TypeScript.
+```
+
+`inlinePrompt` requires the prompt header to render on a single terminal line. If `prefix` or `prompt` (including any `Stateful` prefix variant) contains a newline, `readMultiline` throws at call time. See `examples/inline-prompt.ts` for a full runnable demo.
 
 ### `Stateful<T>`
 

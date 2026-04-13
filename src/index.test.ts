@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
+import { stripVTControlCharacters } from "node:util";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPrompt, readMultiline, type TTYInput } from "./index.js";
 
@@ -2448,5 +2449,238 @@ describe("createPrompt", () => {
     await promise;
     const raw = output.chunks.join("");
     expect(raw).toContain("$ ");
+  });
+});
+
+describe("inlinePrompt option", () => {
+  let input: ReturnType<typeof createTTYInput>;
+  let output: ReturnType<typeof createNullOutput>;
+
+  beforeEach(() => {
+    input = createTTYInput();
+    output = createNullOutput();
+  });
+
+  it("renders prompt and input on the same line", async () => {
+    const promise = readMultiline("Name: ", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      inlinePrompt: true,
+      clearAfterSubmit: false,
+    });
+    input.send("Tom");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["Tom", null]);
+
+    // After stripping VT control sequences, "Name: Tom" must appear as a
+    // single uninterrupted (newline-free) segment. Using a single regex
+    // gives an atomic "exists AND no newline between" assertion, guarding
+    // against silent false positives when either substring is missing.
+    const visible = stripVTControlCharacters(output.chunks.join(""));
+    expect(visible).toMatch(/Name: Tom/);
+  });
+
+  it("works with submitRender: preserve", async () => {
+    const promise = readMultiline("Name:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      inlinePrompt: true,
+      theme: { submitRender: "preserve" as const },
+    });
+    input.send("Alice");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["Alice", null]);
+  });
+
+  it("renders second line with linePrefix", async () => {
+    const promise = readMultiline("Bio:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      linePrefix: "  ",
+      inlinePrompt: true,
+      clearAfterSubmit: false,
+    });
+    input.send("Line1");
+    input.send(KEY.SHIFT_ENTER); // Insert newline
+    input.send("Line2");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["Line1\nLine2", null]);
+
+    // Strip VT control sequences to inspect visible text and assert that the
+    // configured linePrefix ("  ") precedes the second line. This guards against
+    // regressions where inlinePrompt accidentally suppresses prefixes for
+    // subsequent lines.
+    const visible = stripVTControlCharacters(output.chunks.join(""));
+    expect(visible).toContain("Line1");
+    expect(visible).toContain("Line2");
+    expect(visible).toMatch(/Line1[\s\S]*?\n {2}Line2/);
+  });
+
+  it("throws when inlinePrompt is used with a multi-line prompt", async () => {
+    await expect(
+      readMultiline("Question\nline2:", {
+        input,
+        output: output.stream,
+        prefix: "> ",
+        inlinePrompt: true,
+      }),
+    ).rejects.toThrow(/single-line/);
+  });
+
+  it("throws when a non-pending Stateful prefix variant contains a newline", async () => {
+    // Only the submitted variant has a newline. If we validated just the
+    // pending state, this call would pass and later break renderStateChange.
+    await expect(
+      readMultiline("Name: ", {
+        input,
+        output: output.stream,
+        prefix: { pending: "> ", submitted: "✔\n" },
+        inlinePrompt: true,
+      }),
+    ).rejects.toThrow(/single-line/);
+  });
+
+  it("merges lines correctly when backspacing at the start of the second line", async () => {
+    const promise = readMultiline("Name:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      linePrefix: "  ",
+      inlinePrompt: true,
+      clearAfterSubmit: false,
+    });
+    input.send("Hello");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("World");
+    // Cursor is at end of "World" on row 1; move to start of row 1 and backspace to merge.
+    input.send(KEY.HOME);
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["HelloWorld", null]);
+  });
+
+  it("preserves the inline display across undo/redo without duplicating the prompt header", async () => {
+    const promise = readMultiline("Name:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      inlinePrompt: true,
+      clearAfterSubmit: false,
+    });
+    input.send("AB");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("CD");
+    input.send(KEY.CTRL_Z); // undo
+    input.send(KEY.CTRL_Y); // redo
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result[1]).toBeNull();
+
+    // With clearAfterSubmit:false (preserve mode), the prompt header is emitted at
+    // initialization and once more by renderStateChange on submit. Any additional
+    // occurrences would indicate a regression in restoreSnapshot / redrawFrom where
+    // the inline header gets re-emitted mid-edit.
+    const visible = stripVTControlCharacters(output.chunks.join(""));
+    const occurrences = visible.match(/Name:/g)?.length ?? 0;
+    expect(occurrences).toBeLessThanOrEqual(2);
+  });
+
+  it("redraws correctly after Ctrl+L clearScreen", async () => {
+    const promise = readMultiline("Name:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      inlinePrompt: true,
+      clearAfterSubmit: false,
+    });
+    input.send("Tom");
+    input.send(KEY.CTRL_L); // triggers fullRedraw inline path
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["Tom", null]);
+  });
+
+  it("renders linePrefix on submitted output with preserve mode", async () => {
+    const promise = readMultiline("Bio:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      linePrefix: "  ",
+      inlinePrompt: true,
+      theme: { submitRender: "preserve" as const },
+    });
+    input.send("Line1");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("Line2");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["Line1\nLine2", null]);
+
+    // After renderStateChange, the second line should still be prefixed by the
+    // configured linePrefix in the final post-submit output.
+    const visible = stripVTControlCharacters(output.chunks.join(""));
+    // Look for the final submitted block: "Bio:Line1\n  Line2"
+    expect(visible).toMatch(/Bio:[^\n]*Line1\n {2}Line2/);
+  });
+
+  it("transitions to error state without losing linePrefix on subsequent lines", async () => {
+    const promise = readMultiline("Name:", {
+      input,
+      output: output.stream,
+      prefix: "> ",
+      linePrefix: "  ",
+      inlinePrompt: true,
+      clearAfterSubmit: false,
+      validate: (v) => (v.includes("bad") ? "nope" : null),
+    });
+    input.send("ok");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("bad");
+    input.send(KEY.ENTER); // triggers validation error → setVisualState("error")
+    // Recover: delete "bad" → "ba" is fine, clear error on next submit
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.BACKSPACE);
+    input.send(KEY.BACKSPACE);
+    input.send("fine");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["ok\nfine", null]);
+
+    // Error-state redraw must not strip the linePrefix from the second line.
+    const visible = stripVTControlCharacters(output.chunks.join(""));
+    expect(visible).toMatch(/ok[\s\S]*?\n {2}/);
+  });
+
+  it("transitions the prefix from pending to submitted in inline mode (PR Behavior)", async () => {
+    // Inline mode concatenates `prefix + prompt + input` verbatim, so the
+    // prompt string itself carries the trailing space that separates the
+    // prompt from the input in the rendered output.
+    const promise = readMultiline("Enter your name: ", {
+      input,
+      output: output.stream,
+      prefix: { pending: "> ", submitted: "✔ " },
+      inlinePrompt: true,
+      theme: { submitRender: "preserve" as const },
+    });
+    input.send("Tom");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["Tom", null]);
+
+    // After submit with preserve mode, the final rendered line should read
+    // "✔ Enter your name: Tom" — matching the "After submit" behavior in the
+    // PR description. Strip VT control sequences to compare visible text only.
+    const visible = stripVTControlCharacters(output.chunks.join(""));
+    expect(visible).toContain("✔ Enter your name: Tom");
+    // And the submitted block must use the ✔ prefix (the pending "> " prefix
+    // may still appear earlier in the stream from the pre-submit render).
+    expect(visible).toMatch(/✔ Enter your name: [^\n]*Tom/);
   });
 });
