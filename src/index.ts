@@ -157,14 +157,14 @@ function readFromTTY(
 
     // Build pending-state prompt header and line prefix
     const promptHeader = buildPromptHeader(prefixOption, rawPrompt, theme, "pending");
+    if (inlinePrompt && /[\r\n]/.test(promptHeader)) {
+      throw new Error(
+        "inlinePrompt requires a single-line prompt header (no newline in prefix or prompt).",
+      );
+    }
     // In inline mode, the header is on the same line as input, so header height is 0
     const promptHeaderHeight = inlinePrompt ? 0 : computeHeaderHeight(promptHeader);
-    const styledLinePrefix = buildStyledLinePrefix(
-      resolvedLinePrefixOption,
-      theme,
-      "pending",
-      inlinePrompt,
-    );
+    const styledLinePrefix = buildStyledLinePrefix(resolvedLinePrefixOption, theme, "pending");
     const rawLinePrefix = resolveStateful(resolvedLinePrefixOption, "pending");
     const linePrefixWidth = stringWidth(rawLinePrefix);
 
@@ -359,8 +359,11 @@ function readFromTTY(
       }
     }
 
-    // Draw first input line with linePrefix (empty in inline mode since header is inline)
-    w(state, styledLinePrefix);
+    // Draw first input line with linePrefix
+    // In inline mode, row 0 has no prefix (the prompt header is inline with input)
+    if (!inlinePrompt) {
+      w(state, styledLinePrefix);
+    }
 
     if (initialValue) {
       const initLines = initialValue.split("\n");
@@ -454,9 +457,7 @@ function renderStateChange(
   // In inline mode, header is on same line as input
   const headerHeight = state.inlinePrompt ? 0 : computeHeaderHeight(header);
   const linePrefix =
-    mode === "content"
-      ? ""
-      : buildStyledLinePrefix(state.linePrefixOption, theme, renderState, state.inlinePrompt);
+    mode === "content" ? "" : buildStyledLinePrefix(state.linePrefixOption, theme, renderState);
 
   // Choose answer style based on state
   const answerStyle =

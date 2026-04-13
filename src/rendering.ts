@@ -48,18 +48,14 @@ export function pW(state: EditorState): number {
   return state.linePrefixWidth;
 }
 
-/** Get the offset for row 0 (prompt header width in inline mode) */
-function pOffset(state: EditorState): number {
-  return state.inlinePrompt && state.row === 0 ? getPromptHeaderWidth(state) : 0;
+/** Get the row-start offset: prompt header width on row 0 in inline mode, linePrefix width otherwise */
+function rowStartOffset(state: EditorState, r: number): number {
+  return state.inlinePrompt && r === 0 ? getPromptHeaderWidth(state) : pW(state);
 }
 
 /** Get 1-based terminal column from line start to code unit index, accounting for display width */
 export function tCol(state: EditorState, r: number, c: number): number {
-  // In inline prompt mode, row 0 starts with the prompt header (no linePrefix)
-  if (state.inlinePrompt && r === 0) {
-    return getPromptHeaderWidth(state) + stringWidth(state.lines[r].slice(0, c)) + 1;
-  }
-  return pW(state) + stringWidth(state.lines[r].slice(0, c)) + 1;
+  return rowStartOffset(state, r) + stringWidth(state.lines[r].slice(0, c)) + 1;
 }
 
 /** Style input text according to the theme */
@@ -176,12 +172,7 @@ export function setVisualState(state: EditorState, visualState: "pending" | "err
   );
   // In inline mode, header is on same line as input
   state.promptHeaderHeight = state.inlinePrompt ? 0 : computeHeaderHeight(state.promptHeader);
-  state.styledLinePrefix = buildStyledLinePrefix(
-    state.linePrefixOption,
-    state.theme,
-    visualState,
-    state.inlinePrompt,
-  );
+  state.styledLinePrefix = buildStyledLinePrefix(state.linePrefixOption, state.theme, visualState);
   const rawLinePrefix = resolveStateful(state.linePrefixOption, visualState);
   state.linePrefixWidth = stringWidth(rawLinePrefix);
 }
@@ -222,12 +213,9 @@ export function redrawFrom(
   w(state, `\x1b[${tCol(state, fromRow, 0)}G`);
 
   w(state, "\x1b[J");
-  // In inline prompt mode, only write the prompt header if we're staying on row 0
-  // (fromRow=0 AND targetRow=0 means we haven't moved to a new line)
-  // This prevents prompt duplication when inserting newlines
-  if (state.inlinePrompt && fromRow === 0 && targetRow === 0) {
-    w(state, state.promptHeader);
-  }
+  // Note: In inline prompt mode, tCol(state, 0, 0) already positions the cursor
+  // *after* the existing prompt header, so the header on the terminal is preserved
+  // and we must not re-emit it here (doing so would duplicate the header).
   w(state, renderLine(state, fromRow));
   for (let i = fromRow + 1; i < state.lines.length; i++) {
     w(state, "\n" + state.styledLinePrefix + renderLine(state, i));
@@ -301,14 +289,12 @@ export function restoreSnapshot(state: EditorState, snap: Snapshot): void {
   state.lines.push(...snap.lines);
   if (state.row > 0) w(state, `\x1b[${state.row}A`);
   w(state, "\r");
-  // In inline mode, row 0 starts with prompt header (no linePrefix), otherwise use pW
-  const col = state.inlinePrompt ? getPromptHeaderWidth(state) : pW(state);
+  // Position cursor after row-0's leading segment: prompt header in inline mode,
+  // linePrefix otherwise. The header/prefix is already on-screen and must not be
+  // re-emitted here (doing so would duplicate or misalign it).
+  const col = rowStartOffset(state, 0);
   w(state, `\x1b[${col + 1}G`);
   w(state, "\x1b[J");
-  // In inline mode, row 0 starts with the prompt header
-  if (state.inlinePrompt) {
-    w(state, state.promptHeader);
-  }
   w(state, renderLine(state, 0));
   for (let i = 1; i < state.lines.length; i++) {
     w(state, "\n" + state.styledLinePrefix + renderLine(state, i));

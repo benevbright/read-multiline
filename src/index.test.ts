@@ -2518,5 +2518,22 @@ describe("inlinePrompt option", () => {
     const raw = output.chunks.join("");
     expect(raw).toContain("Line1");
     expect(raw).toContain("Line2");
+    // Strip ANSI escape sequences to inspect visible text and assert that the
+    // configured linePrefix ("  ") precedes the second line. This guards against
+    // regressions where inlinePrompt accidentally suppresses prefixes for
+    // subsequent lines.
+    const visible = raw.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+    expect(visible).toMatch(/Line1[\s\S]*?\n  Line2/);
+  });
+
+  it("throws when inlinePrompt is used with a multi-line prompt", async () => {
+    await expect(
+      readMultiline("Question\nline2:", {
+        input,
+        output: output.stream,
+        prefix: "> ",
+        inlinePrompt: true,
+      }),
+    ).rejects.toThrow(/single-line/);
   });
 });

@@ -55,13 +55,7 @@ export function buildStyledLinePrefix(
   linePrefixOption: Stateful<string>,
   theme: PromptTheme | undefined,
   state: VisualState,
-  inlinePrompt = false,
 ): string {
-  // In inline prompt mode for pending state, the first line has no prefix
-  // (the prompt header is rendered inline with the input)
-  if (inlinePrompt && state === "pending") {
-    return "";
-  }
   const linePrefix = resolveStateful(linePrefixOption, state);
   const style = theme?.linePrefix ? resolveStateful(theme.linePrefix, state) : undefined;
   return applyStyle(linePrefix, style);
