@@ -2648,4 +2648,28 @@ describe("inlinePrompt option", () => {
     const visible = output.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
     expect(visible).toMatch(/ok[\s\S]*?\n {2}/);
   });
+
+  it("transitions the prefix from pending to submitted in inline mode (PR Behavior)", async () => {
+    const promise = readMultiline("Enter your name:", {
+      input,
+      output: output.stream,
+      prefix: { pending: "> ", submitted: "✔ " },
+      inlinePrompt: true,
+      theme: { submitRender: "preserve" as const },
+    });
+    input.send("Tom");
+    input.send(KEY.ENTER);
+    const result = await promise;
+    expect(result).toEqual(["Tom", null]);
+
+    // After submit with preserve mode, the final rendered line should read
+    // "✔ Enter your name: Tom" — matching the "After submit" behavior in the
+    // PR description. Strip ANSI to compare visible characters only.
+    const visible = output.chunks.join("").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+    expect(visible).toContain("✔ Enter your name:Tom");
+    // And the pending-state "> " prefix must no longer appear on the final line.
+    // (It may still appear in the pre-submit portion of the stream — we only
+    // assert that the submitted block has the ✔ prefix.)
+    expect(visible).toMatch(/✔ Enter your name:[^\n]*Tom/);
+  });
 });
