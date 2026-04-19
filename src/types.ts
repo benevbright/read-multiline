@@ -253,6 +253,15 @@ export interface HistoryOptions {
   filePath: string;
   /** Maximum number of entries to keep (default: 100) */
   maxEntries?: number;
+  /**
+   * Predicate that decides whether a submitted value should be appended to
+   * persistent history. Return `false` to skip; `true`, `undefined`, or an
+   * omitted callback persist the value as usual.
+   *
+   * Useful for excluding REPL meta commands, empty inputs, or other values
+   * that validate successfully but shouldn't be recalled via history navigation.
+   */
+  shouldPersist?: (value: string) => boolean;
 }
 
 /** A readable stream with optional TTY capabilities for character-by-character raw mode input. */

@@ -1,7 +1,10 @@
 import { EventEmitter } from "node:events";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import { stripVTControlCharacters } from "node:util";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPrompt, readMultiline, type TTYInput } from "./index.js";
 
 // Dummy output stream that records writes
@@ -1299,6 +1302,99 @@ describe("readMultiline (TTY mode)", () => {
     input.send(KEY.PAGE_DOWN); // -> "second"
     input.send(KEY.ENTER);
     expect(await promise).toEqual(["second", null]);
+  });
+
+  // --- File-based history persistence ---
+
+  describe("file-based history persistence", () => {
+    const testDir = join(tmpdir(), `read-multiline-persist-${process.pid}`);
+
+    afterEach(() => {
+      rmSync(testDir, { recursive: true, force: true });
+    });
+
+    async function waitForEntries(
+      filePath: string,
+      predicate: (entries: string[]) => boolean,
+      timeoutMs = 1000,
+    ): Promise<string[]> {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        try {
+          const raw = readFileSync(filePath, "utf8");
+          const entries = JSON.parse(raw) as string[];
+          if (predicate(entries)) return entries;
+        } catch {
+          // file not ready yet
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error(`timeout waiting for history file at ${filePath}`);
+    }
+
+    it("persists submitted entries to the history file", async () => {
+      const filePath = join(testDir, "history.json");
+      mkdirSync(testDir, { recursive: true });
+      const promise = readMultiline("", {
+        input,
+        output: output.stream,
+        history: { filePath },
+      });
+      input.send("hello");
+      input.send(KEY.ENTER);
+      expect(await promise).toEqual(["hello", null]);
+      expect(await waitForEntries(filePath, (e) => e.length > 0)).toEqual(["hello"]);
+    });
+
+    it("skips persistence when shouldPersist returns false", async () => {
+      const filePath = join(testDir, "history.json");
+      mkdirSync(testDir, { recursive: true });
+      const promise = readMultiline("", {
+        input,
+        output: output.stream,
+        history: {
+          filePath,
+          shouldPersist: (value) => !value.startsWith("\\"),
+        },
+      });
+      input.send("\\help");
+      input.send(KEY.ENTER);
+      expect(await promise).toEqual(["\\help", null]);
+      // Allow any attempted write to complete; no file should be created.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(existsSync(filePath)).toBe(false);
+    });
+
+    it("only persists values for which shouldPersist returns true", async () => {
+      const filePath = join(testDir, "history.json");
+      mkdirSync(testDir, { recursive: true });
+
+      const shouldPersist = (value: string) => value.trim() !== "";
+
+      const runSubmit = async (content: string) => {
+        const localInput = createTTYInput();
+        const localOutput = createNullOutput();
+        const promise = readMultiline("", {
+          input: localInput,
+          output: localOutput.stream,
+          history: { filePath, shouldPersist },
+        });
+        localInput.send(content);
+        localInput.send(KEY.ENTER);
+        return promise;
+      };
+
+      expect(await runSubmit("hello")).toEqual(["hello", null]);
+      await waitForEntries(filePath, (e) => e.includes("hello"));
+
+      expect(await runSubmit("   ")).toEqual(["   ", null]);
+      // give any unexpected save time to land before the next submit
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(await runSubmit("world")).toEqual(["world", null]);
+      const entries = await waitForEntries(filePath, (e) => e.includes("world"));
+      expect(entries).toEqual(["hello", "world"]);
+    });
   });
 
   // --- Ctrl+Up/Down for buffer navigation ---

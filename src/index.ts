@@ -310,7 +310,7 @@ function readFromTTY(
       if (submitRender !== "clear") {
         w(state, "\n");
       }
-      if (historyConfig?.filePath) {
+      if (historyConfig?.filePath && historyConfig.shouldPersist?.(result) !== false) {
         const maxEntries = historyConfig.maxEntries ?? 100;
         const updated = appendHistory(state.history, result, maxEntries);
         saveHistory(historyConfig.filePath, updated);
