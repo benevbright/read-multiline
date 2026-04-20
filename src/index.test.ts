@@ -2023,6 +2023,41 @@ describe("readMultiline (TTY mode)", () => {
     expect(raw).toContain("\x1b[31mpasted\x1b[0m");
   });
 
+  it("highlight is applied when navigating history", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line) => `\x1b[31m${line}\x1b[0m`,
+      history: ["older", "newer"],
+    });
+    output.chunks.length = 0;
+    input.send(KEY.UP); // -> "newer"
+    const afterFirst = output.chunks.join("");
+    expect(afterFirst).toContain("\x1b[31mnewer\x1b[0m");
+    output.chunks.length = 0;
+    input.send(KEY.UP); // -> "older"
+    const afterSecond = output.chunks.join("");
+    expect(afterSecond).toContain("\x1b[31molder\x1b[0m");
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["older", null]);
+  });
+
+  it("highlight is applied to multi-line history entries", async () => {
+    const promise = readMultiline("", {
+      input,
+      output: output.stream,
+      highlight: (line, index) => `\x1b[3${index + 1}m${line}\x1b[0m`,
+      history: ["line1\nline2"],
+    });
+    output.chunks.length = 0;
+    input.send(KEY.UP);
+    const raw = output.chunks.join("");
+    expect(raw).toContain("\x1b[31mline1\x1b[0m");
+    expect(raw).toContain("\x1b[32mline2\x1b[0m");
+    input.send(KEY.ENTER);
+    expect(await promise).toEqual(["line1\nline2", null]);
+  });
+
   // --- transform option ---
 
   it("transform can auto-close brackets", async () => {
