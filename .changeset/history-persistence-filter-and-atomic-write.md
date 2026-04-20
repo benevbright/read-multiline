@@ -1,5 +1,5 @@
 ---
-"@toiroakr/read-multiline": minor
+"@toiroakr/read-multiline": patch
 ---
 
 Harden persistent history: add `shouldPersist` predicate and make file writes atomic
