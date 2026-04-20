@@ -14,7 +14,7 @@ Simple multi-line input reader for Node.js terminals. Solves the limitation of N
 - Full-width (CJK) character support with correct cursor positioning
 - Bracketed paste mode for multi-line paste
 - Input history navigation (Up/Down at boundaries, Alt+Up/Down, Ctrl+P/N, PageUp/PageDown)
-- File-based persistent history with automatic load/save
+- File-based persistent history with atomic (tmp+rename) save and per-entry `shouldPersist` filter
 - Initial value pre-population
 - Validation with debounced live feedback
 - Max lines / max character length enforcement
@@ -327,12 +327,24 @@ await readMultiline("", {
 });
 ```
 
-| Option       | Type     | Default    | Description                    |
-| ------------ | -------- | ---------- | ------------------------------ |
-| `filePath`   | `string` | (required) | JSON file path for persistence |
-| `maxEntries` | `number` | `100`      | Maximum entries to keep        |
+| Option          | Type                         | Default     | Description                                                                                        |
+| --------------- | ---------------------------- | ----------- | -------------------------------------------------------------------------------------------------- |
+| `filePath`      | `string`                     | (required)  | JSON file path for persistence                                                                     |
+| `maxEntries`    | `number`                     | `100`       | Maximum entries to keep                                                                            |
+| `shouldPersist` | `(value: string) => boolean` | `undefined` | Predicate that returns `false` to skip persisting a submitted value (it still resolves as success) |
 
-The file is loaded synchronously at startup and saved asynchronously after each submit (errors are silently ignored). The parent directory is created automatically if it doesn't exist.
+The file is loaded at startup and updated after each submit via a read-modify-write cycle: the current file is re-read, the new entry appended, and the result written through a sibling temp file plus `fs.rename`. This way readers never observe a partial JSON document, and entries appended by concurrent sessions after this session started are preserved. Errors are silently ignored; the parent directory is created automatically.
+
+Use `shouldPersist` to accept values that validate successfully but shouldn't be recalled via history — for example, REPL meta commands or empty submissions:
+
+```typescript
+await readMultiline("> ", {
+  history: {
+    filePath: "~/.myapp/history.json",
+    shouldPersist: (value) => value.trim() !== "" && !value.startsWith("\\"),
+  },
+});
+```
 
 #### `historyArrowNavigation`
 

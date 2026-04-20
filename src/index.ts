@@ -1,7 +1,7 @@
 import { stringWidth } from "./chars.js";
 import { handleDelete } from "./editing.js";
 import { buildHelpFooter, detectKittyProtocol } from "./footer.js";
-import { appendHistory, loadHistory, saveHistory } from "./history.js";
+import { appendPersistedHistory, loadHistory } from "./history.js";
 import { buildKeyMap, onData } from "./input.js";
 import * as presets from "./presets/index.js";
 import {
@@ -310,10 +310,9 @@ function readFromTTY(
       if (submitRender !== "clear") {
         w(state, "\n");
       }
-      if (historyConfig?.filePath) {
+      if (historyConfig?.filePath && historyConfig.shouldPersist?.(result) !== false) {
         const maxEntries = historyConfig.maxEntries ?? 100;
-        const updated = appendHistory(state.history, result, maxEntries);
-        saveHistory(historyConfig.filePath, updated);
+        appendPersistedHistory(historyConfig.filePath, result, maxEntries);
       }
       resolve([result, null]);
     }

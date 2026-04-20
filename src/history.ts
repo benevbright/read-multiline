@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFile } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
 
@@ -27,17 +27,46 @@ export function loadHistory(filePath: string, maxEntries?: number): string[] {
   }
 }
 
-/** Save history entries to a JSON file asynchronously. Errors are silently ignored. */
-export async function saveHistory(filePath: string, entries: string[]): Promise<void> {
+/**
+ * Atomically replace the history file with `entries`.
+ * Writes to a unique sibling temp file then renames it over the target path so
+ * readers never observe a partial JSON document. Errors are silently swallowed
+ * to preserve the prior fire-and-forget semantics.
+ */
+export function saveHistory(filePath: string, entries: string[]): void {
   const resolved = expandHome(filePath);
   try {
     mkdirSync(dirname(resolved), { recursive: true });
   } catch {
     // ignore
   }
-  await new Promise<void>((resolve) => {
-    writeFile(resolved, JSON.stringify(entries), () => resolve());
-  });
+  const tmpPath = `${resolved}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    writeFileSync(tmpPath, JSON.stringify(entries));
+    renameSync(tmpPath, resolved);
+  } catch {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/**
+ * Append `entry` to the on-disk history file via read-modify-write.
+ * Re-reads the file immediately before writing so entries appended by
+ * concurrent sessions after this session started are preserved. The final
+ * write uses atomic replacement via `saveHistory`.
+ *
+ * A small race window remains when two writers interleave load/write: the
+ * last renamer wins. Callers that need strict ordering across processes
+ * should layer a file lock on top.
+ */
+export function appendPersistedHistory(filePath: string, entry: string, maxEntries?: number): void {
+  const current = loadHistory(filePath, maxEntries);
+  const merged = appendHistory(current, entry, maxEntries);
+  saveHistory(filePath, merged);
 }
 
 /** Append an entry to the history array and apply maxEntries limit. Returns a new array. */
