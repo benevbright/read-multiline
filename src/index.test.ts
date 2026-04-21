@@ -2163,7 +2163,7 @@ describe("readMultiline (TTY mode)", () => {
           return { lines: lines.with(row, newLine), row, col };
         }
         if (event.type === "newline") {
-          const { lines, row, col } = state;
+          const { lines, row } = state;
           const prevLine = lines[row - 1];
           if (prevLine.trimEnd().endsWith("{") && lines[row].trimStart().startsWith("}")) {
             const indent = prevLine.match(/^(\s*)/)?.[1] ?? "";
