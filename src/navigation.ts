@@ -12,7 +12,7 @@ import {
   flushBatch,
   moveTo,
   pW,
-  styledInput,
+  renderLine,
   tCol,
   w,
 } from "./rendering.js";
@@ -210,9 +210,9 @@ export function loadContent(
   w(state, "\x1b[J");
   state.lines.length = 0;
   state.lines.push(...newLines);
-  w(state, styledInput(state, state.lines[0]));
+  w(state, renderLine(state, 0));
   for (let i = 1; i < state.lines.length; i++) {
-    w(state, "\n" + state.styledLinePrefix + styledInput(state, state.lines[i]));
+    w(state, "\n" + state.styledLinePrefix + renderLine(state, i));
   }
   if (cursor === "start") {
     state.row = 0;
