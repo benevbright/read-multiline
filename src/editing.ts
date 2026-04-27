@@ -10,6 +10,7 @@ import {
   beginBatch,
   clearStatus,
   flushBatch,
+  lastVisualRow,
   moveTo,
   pW,
   redrawAfterDelete,
@@ -204,10 +205,16 @@ export function insertChar(state: EditorState, ch: string): void {
   if (!state.isPasting) saveUndo(state, "insert");
 
   const preEditLines = capturePreEdit(state);
+  const previousRow = state.row;
+  const previousCol = state.col;
+  const hadBelowEditor = Boolean(state.statusText || state.footerText);
+  const previousLastVisualRow = hadBelowEditor ? lastVisualRow(state) : 0;
 
   state.lines[state.row] =
     state.lines[state.row].slice(0, state.col) + ch + state.lines[state.row].slice(state.col);
   state.col += ch.length;
+  const targetRow = state.row;
+  const targetCol = state.col;
 
   if (preEditLines) {
     applyTransform(state, { type: "insert", char: ch }, preEditLines, state.row, state.col);
@@ -218,6 +225,10 @@ export function insertChar(state: EditorState, ch: string): void {
     w(state, renderLine(state, state.row));
     w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
     flushBatch(state);
+  } else if (hadBelowEditor && lastVisualRow(state) !== previousLastVisualRow) {
+    state.row = previousRow;
+    state.col = previousCol;
+    redrawFrom(state, previousRow, targetRow, targetCol);
   } else {
     const rest = state.lines[state.row].slice(state.col);
     w(state, styledInput(state, ch + rest));

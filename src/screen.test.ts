@@ -5,8 +5,14 @@ import { readMultiline, type TTYInput } from "./index.js";
 
 // Virtual terminal that feeds ANSI output into @xterm/headless
 function createVirtualTerminal(cols = 80, rows = 24) {
-  const term = new Terminal({ cols, rows, allowProposedApi: true, convertEol: true });
+  const term = new Terminal({
+    cols,
+    rows,
+    allowProposedApi: true,
+    convertEol: true,
+  });
   const stream = {
+    columns: cols,
     write(data: string) {
       term.write(data);
       return true;
@@ -38,6 +44,14 @@ function flush(term: Terminal): Promise<void> {
 // so we also trim trailing spaces from the result.
 function screenLine(term: Terminal, row: number): string {
   return (term.buffer.active.getLine(row)?.translateToString(true) ?? "").trimEnd();
+}
+
+function rawScreenLine(term: Terminal, row: number): string {
+  return term.buffer.active.getLine(row)?.translateToString(false) ?? "";
+}
+
+function isWrappedRow(term: Terminal, row: number): boolean {
+  return term.buffer.active.getLine(row)?.isWrapped ?? false;
 }
 
 function cursorPos(term: Terminal) {
@@ -460,6 +474,38 @@ describe("Screen rendering (virtual terminal)", () => {
     await promise;
   });
 
+  it("Shift+Enter after a soft-wrapped line does not duplicate the first line", async () => {
+    vt.term.dispose();
+    vt = createVirtualTerminal(12, 24);
+
+    const promise = readMultiline("", {
+      input,
+      output: vt.stream,
+      helpFooter: false,
+      prefix: "> ",
+      linePrefix: "  ",
+    });
+    input.send("abcdefghijk");
+    await flush(vt.term);
+
+    expect(rawScreenLine(vt.term, 1)).toBe("  abcdefghij");
+    expect(rawScreenLine(vt.term, 2).trim()).toBe("k");
+    expect(isWrappedRow(vt.term, 2)).toBe(true);
+    expect(cursorPos(vt.term)).toEqual({ x: 1, y: 2 });
+
+    input.send(KEY.SHIFT_ENTER);
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe(">");
+    expect(rawScreenLine(vt.term, 1)).toBe("  abcdefghij");
+    expect(rawScreenLine(vt.term, 2)).toContain("k");
+    expect(rawScreenLine(vt.term, 3).trim()).toBe("");
+    expect(cursorPos(vt.term)).toEqual({ x: 2, y: 3 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
   // --- Word jump cursor position ---
 
   it("Alt+Left positions cursor at word start correctly", async () => {
@@ -545,6 +591,105 @@ describe("Screen rendering (virtual terminal)", () => {
     expect(screenLine(vt.term, 2)).toBe("  line2");
     expect(screenLine(vt.term, 3)).toBe("  line3");
     expect(cursorPos(vt.term)).toEqual({ x: 7, y: 3 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  it("paste causing soft wrap on the second line does not duplicate the first line", async () => {
+    vt.term.dispose();
+    vt = createVirtualTerminal(12, 24);
+
+    const promise = readMultiline("", {
+      input,
+      output: vt.stream,
+      helpFooter: false,
+      prefix: "> ",
+      linePrefix: "  ",
+    });
+    input.send("top");
+    input.send(KEY.SHIFT_ENTER);
+    await flush(vt.term);
+
+    input.send("\x1b[200~apple apple \x1b[201~");
+    await flush(vt.term);
+
+    const rows = Array.from({ length: 6 }, (_, row) => ({
+      row,
+      screen: screenLine(vt.term, row),
+      raw: rawScreenLine(vt.term, row),
+      wrapped: isWrappedRow(vt.term, row),
+    }));
+
+    expect(rows).toEqual([
+      { row: 0, screen: ">", raw: ">           ", wrapped: false },
+      { row: 1, screen: "  top", raw: "  top       ", wrapped: false },
+      { row: 2, screen: "  apple appl", raw: "  apple appl", wrapped: false },
+      { row: 3, screen: "e", raw: "e           ", wrapped: true },
+      { row: 4, screen: "", raw: "            ", wrapped: false },
+      { row: 5, screen: "", raw: "            ", wrapped: false },
+    ]);
+    expect(cursorPos(vt.term)).toEqual({ x: 2, y: 3 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  it("typing into a soft wrap keeps the footer below the wrapped input", async () => {
+    vt.term.dispose();
+    vt = createVirtualTerminal(12, 24);
+
+    const promise = readMultiline("", {
+      input,
+      output: vt.stream,
+      helpFooter: false,
+      prefix: "> ",
+      footer: "FOOT",
+    });
+    input.send("abcdefghijk");
+    await flush(vt.term);
+
+    const rows = Array.from({ length: 5 }, (_, row) => ({
+      row,
+      screen: screenLine(vt.term, row),
+      raw: rawScreenLine(vt.term, row),
+      wrapped: isWrappedRow(vt.term, row),
+    }));
+
+    expect(rows).toEqual([
+      { row: 0, screen: ">", raw: ">           ", wrapped: false },
+      { row: 1, screen: "> abcdefghij", raw: "> abcdefghij", wrapped: false },
+      { row: 2, screen: "k", raw: "k           ", wrapped: true },
+      { row: 3, screen: "FOOT", raw: "FOOT        ", wrapped: false },
+      { row: 4, screen: "", raw: "            ", wrapped: false },
+    ]);
+    expect(cursorPos(vt.term)).toEqual({ x: 1, y: 2 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  it("typing into a soft wrap with footer preserves terminal content above the prompt", async () => {
+    vt.term.dispose();
+    vt = createVirtualTerminal(12, 24);
+    vt.stream.write("above\r\n");
+    await flush(vt.term);
+
+    const promise = readMultiline("", {
+      input,
+      output: vt.stream,
+      helpFooter: false,
+      prefix: "> ",
+      footer: "FOOT",
+    });
+    input.send("abcdefghijk");
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("above");
+    expect(screenLine(vt.term, 1)).toBe(">");
+    expect(screenLine(vt.term, 2)).toBe("> abcdefghij");
+    expect(screenLine(vt.term, 3)).toBe("k");
+    expect(screenLine(vt.term, 4)).toBe("FOOT");
 
     input.send(KEY.ENTER);
     await promise;
