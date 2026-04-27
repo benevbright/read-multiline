@@ -237,6 +237,33 @@ describe("Screen rendering (virtual terminal)", () => {
     await promise;
   });
 
+  it("cursor moves up from a wrapped second line using visual row deltas", async () => {
+    vt.term.dispose();
+    vt = createVirtualTerminal(12, 24);
+
+    const promise = readMultiline("", {
+      input,
+      output: vt.stream,
+      helpFooter: false,
+      prefix: "> ",
+      linePrefix: "  ",
+    });
+    input.send("abcdefghijk");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("xy");
+    await flush(vt.term);
+
+    expect(cursorPos(vt.term)).toEqual({ x: 4, y: 3 });
+
+    input.send(KEY.UP);
+    await flush(vt.term);
+
+    expect(cursorPos(vt.term)).toEqual({ x: 4, y: 1 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
   // --- Insert at cursor position ---
 
   it("inserts character at cursor mid-position and redraws correctly", async () => {
@@ -972,6 +999,68 @@ describe("Screen rendering (virtual terminal)", () => {
     expect(screenLine(vt.term, 2)).toBe("  line2");
     expect(cursorPos(vt.term).y).toBe(1);
 
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  it("Ctrl+L restores cursor correctly when a later line wraps", async () => {
+    vt.term.dispose();
+    vt = createVirtualTerminal(12, 24);
+
+    const promise = readMultiline("", {
+      input,
+      output: vt.stream,
+      helpFooter: false,
+      prefix: "> ",
+      linePrefix: "  ",
+    });
+    input.send("ab");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("abcdefghijk");
+    input.send(KEY.UP);
+    await flush(vt.term);
+
+    expect(cursorPos(vt.term)).toEqual({ x: 4, y: 1 });
+
+    input.send(KEY.CTRL_L);
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe(">");
+    expect(screenLine(vt.term, 1)).toBe("  ab");
+    expect(rawScreenLine(vt.term, 2)).toBe("  abcdefghij");
+    expect(rawScreenLine(vt.term, 3).trim()).toBe("k");
+    expect(cursorPos(vt.term)).toEqual({ x: 4, y: 1 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
+  it("validation redraw keeps cursor correct when error header grows taller", async () => {
+    vt.term.dispose();
+    vt = createVirtualTerminal(20, 24);
+    vt.stream.write("above\r\n");
+    await flush(vt.term);
+
+    const promise = readMultiline("msg", {
+      input,
+      output: vt.stream,
+      helpFooter: false,
+      prefix: { pending: "? ", submitted: "✔ ", error: "!\n? " },
+      linePrefix: { pending: "> ", submitted: "  ", error: "x " },
+      validate: (value) => (value.length < 3 ? "Too short" : undefined),
+    });
+    input.send("ab");
+    input.send(KEY.ENTER);
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("above");
+    expect(screenLine(vt.term, 1)).toBe("!");
+    expect(screenLine(vt.term, 2)).toBe("? msg");
+    expect(screenLine(vt.term, 3)).toBe("x ab");
+    expect(screenLine(vt.term, 4)).toBe("Too short");
+    expect(cursorPos(vt.term)).toEqual({ x: 4, y: 3 });
+
+    input.send("c");
     input.send(KEY.ENTER);
     await promise;
   });

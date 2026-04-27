@@ -82,8 +82,12 @@ function lineVisualRows(state: EditorState, row: number): number {
   return visualRowOffset(state, safeRow, state.lines[safeRow].length) + 1;
 }
 
-function firstVisualRow(state: EditorState, row: number): number {
-  let visualRow = state.inlinePrompt ? 0 : state.promptHeaderHeight;
+function firstVisualRow(
+  state: EditorState,
+  row: number,
+  headerHeight = state.promptHeaderHeight,
+): number {
+  let visualRow = state.inlinePrompt ? 0 : headerHeight;
   const limit = Math.max(0, Math.min(row, state.lines.length));
   for (let index = 0; index < limit; index++) {
     visualRow += lineVisualRows(state, index);
@@ -91,10 +95,15 @@ function firstVisualRow(state: EditorState, row: number): number {
   return visualRow;
 }
 
-export function cursorVisualRow(state: EditorState, row: number, col: number): number {
-  if (row >= state.lines.length) return firstVisualRow(state, row);
+export function cursorVisualRow(
+  state: EditorState,
+  row: number,
+  col: number,
+  headerHeight = state.promptHeaderHeight,
+): number {
+  if (row >= state.lines.length) return firstVisualRow(state, row, headerHeight);
   const safeRow = clampRow(state, row);
-  return firstVisualRow(state, safeRow) + visualRowOffset(state, safeRow, col);
+  return firstVisualRow(state, safeRow, headerHeight) + visualRowOffset(state, safeRow, col);
 }
 
 export function lastVisualRow(state: EditorState): number {
@@ -125,7 +134,9 @@ export function styledInput(state: EditorState, text: string): string {
 
 /** Move terminal cursor from current position to (newRow, newCol) */
 export function moveTo(state: EditorState, newRow: number, newCol: number): void {
-  const dr = newRow - state.row;
+  const currentVisualRow = cursorVisualRow(state, state.row, state.col);
+  const newVisualRow = cursorVisualRow(state, newRow, newCol);
+  const dr = newVisualRow - currentVisualRow;
   if (dr < 0) w(state, `\x1b[${-dr}A`);
   else if (dr > 0) w(state, `\x1b[${dr}B`);
   w(state, `\x1b[${tCol(state, newRow, newCol)}G`);
@@ -305,7 +316,12 @@ export function redrawFrom(
  */
 function fullRedraw(state: EditorState, rewindHeaderHeight?: number): void {
   beginBatch(state);
-  const upCount = cursorVisualRow(state, state.row, state.col);
+  const upCount = cursorVisualRow(
+    state,
+    state.row,
+    state.col,
+    rewindHeaderHeight ?? state.promptHeaderHeight,
+  );
   if (upCount > 0) w(state, `\x1b[${upCount}A`);
   w(state, "\r");
 
@@ -336,8 +352,10 @@ function fullRedraw(state: EditorState, rewindHeaderHeight?: number): void {
     w(state, "\n" + state.styledLinePrefix + renderLine(state, i) + "\x1b[K");
   }
   w(state, "\x1b[J");
-  const endRow = state.lines.length - 1;
-  if (endRow > state.row) w(state, `\x1b[${endRow - state.row}A`);
+  const endVisualRow = lastVisualRow(state);
+  const targetVisualRow = cursorVisualRow(state, state.row, state.col);
+  if (endVisualRow > targetVisualRow) w(state, `\x1b[${endVisualRow - targetVisualRow}A`);
+  else if (endVisualRow < targetVisualRow) w(state, `\x1b[${targetVisualRow - endVisualRow}B`);
   w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
   drawBelowEditor(state);
   flushBatch(state);
