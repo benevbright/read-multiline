@@ -1064,4 +1064,31 @@ describe("Screen rendering (virtual terminal)", () => {
     input.send(KEY.ENTER);
     await promise;
   });
+
+  it("submit preserve does not duplicate a wrapped line after Shift+Enter", async () => {
+    vt.term.dispose();
+    vt = createVirtualTerminal(12, 24);
+
+    const promise = readMultiline("", {
+      input,
+      output: vt.stream,
+      helpFooter: false,
+      prefix: { pending: "> ", submitted: "✔ " },
+      linePrefix: { pending: "  ", submitted: "  " },
+      theme: { submitRender: "preserve" },
+    });
+    input.send("abcdefghijk");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("x");
+    await flush(vt.term);
+
+    input.send(KEY.ENTER);
+    await promise;
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("✔");
+    expect(rawScreenLine(vt.term, 1)).toBe("  abcdefghij");
+    expect(rawScreenLine(vt.term, 2).trim()).toBe("k");
+    expect(screenLine(vt.term, 3)).toBe("  x");
+  });
 });
