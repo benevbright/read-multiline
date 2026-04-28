@@ -954,6 +954,35 @@ describe("Screen rendering (virtual terminal)", () => {
     await promise;
   });
 
+  it("undo restores correctly when the current screen includes a wrapped earlier line", async () => {
+    vt.term.dispose();
+    vt = createVirtualTerminal(12, 24);
+
+    const promise = readMultiline("", {
+      input,
+      output: vt.stream,
+      helpFooter: false,
+      prefix: "> ",
+      linePrefix: "  ",
+    });
+    input.send("abcdefghijk");
+    input.send(KEY.SHIFT_ENTER);
+    input.send("x");
+    await flush(vt.term);
+
+    input.send(KEY.CTRL_Z); // undo "x"
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe(">");
+    expect(rawScreenLine(vt.term, 1)).toBe("  abcdefghij");
+    expect(rawScreenLine(vt.term, 2).trim()).toBe("k");
+    expect(rawScreenLine(vt.term, 3).trim()).toBe("");
+    expect(cursorPos(vt.term)).toEqual({ x: 2, y: 3 });
+
+    input.send(KEY.ENTER);
+    await promise;
+  });
+
   it("redo restores screen correctly", async () => {
     const promise = readMultiline("", {
       input,
@@ -1090,5 +1119,29 @@ describe("Screen rendering (virtual terminal)", () => {
     expect(rawScreenLine(vt.term, 1)).toBe("  abcdefghij");
     expect(rawScreenLine(vt.term, 2).trim()).toBe("k");
     expect(screenLine(vt.term, 3)).toBe("  x");
+  });
+
+  it("default submit clear fully clears wrapped editor content", async () => {
+    vt.term.dispose();
+    vt = createVirtualTerminal(12, 24);
+    vt.stream.write("above\r\n");
+    await flush(vt.term);
+
+    const promise = readMultiline("", {
+      input,
+      output: vt.stream,
+      helpFooter: false,
+      prefix: "> ",
+    });
+    input.send("abcdefghijk");
+    await flush(vt.term);
+
+    input.send(KEY.ENTER);
+    await promise;
+    await flush(vt.term);
+
+    expect(screenLine(vt.term, 0)).toBe("above");
+    expect(screenLine(vt.term, 1)).toBe("");
+    expect(screenLine(vt.term, 2)).toBe("");
   });
 });

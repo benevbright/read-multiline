@@ -280,7 +280,7 @@ function readFromTTY(
 
     /** Erase all editor content (prompt header + input lines + status + footer) from the terminal */
     function clearEditorArea() {
-      const upCount = state.row + state.promptHeaderHeight;
+      const upCount = cursorVisualRow(state, state.row, state.col);
       if (upCount > 0) w(state, `\x1b[${upCount}A`);
       w(state, "\r\x1b[J");
       state.statusText = "";

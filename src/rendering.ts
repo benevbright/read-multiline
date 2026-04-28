@@ -369,9 +369,12 @@ export function clearScreen(state: EditorState): void {
 /** Restore editor state from a snapshot and redraw */
 export function restoreSnapshot(state: EditorState, snap: Snapshot): void {
   beginBatch(state);
+  const currentVisualRow = cursorVisualRow(state, state.row, state.col);
+  const inputStartVisualRow = state.inlinePrompt ? 0 : state.promptHeaderHeight;
   state.lines.length = 0;
   state.lines.push(...snap.lines);
-  if (state.row > 0) w(state, `\x1b[${state.row}A`);
+  const upToInputStart = currentVisualRow - inputStartVisualRow;
+  if (upToInputStart > 0) w(state, `\x1b[${upToInputStart}A`);
   w(state, "\r");
   // Position cursor after row-0's leading segment: prompt header in inline mode,
   // linePrefix otherwise. The header/prefix is already on-screen and must not be
@@ -383,8 +386,10 @@ export function restoreSnapshot(state: EditorState, snap: Snapshot): void {
   for (let i = 1; i < state.lines.length; i++) {
     w(state, "\n" + state.styledLinePrefix + renderLine(state, i));
   }
-  const endRow = state.lines.length - 1;
-  if (endRow > snap.row) w(state, `\x1b[${endRow - snap.row}A`);
+  const endVisualRow = lastVisualRow(state);
+  const targetVisualRow = cursorVisualRow(state, snap.row, snap.col);
+  if (endVisualRow > targetVisualRow) w(state, `\x1b[${endVisualRow - targetVisualRow}A`);
+  else if (endVisualRow < targetVisualRow) w(state, `\x1b[${targetVisualRow - endVisualRow}B`);
   w(state, `\x1b[${tCol(state, snap.row, snap.col)}G`);
   state.row = snap.row;
   state.col = snap.col;
