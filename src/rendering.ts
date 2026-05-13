@@ -106,6 +106,33 @@ export function cursorVisualRow(
   return firstVisualRow(state, safeRow, headerHeight) + visualRowOffset(state, safeRow, col);
 }
 
+/** Visual row of the editor's first logical row, col 0. */
+export function editorTopVisualRow(state: EditorState): number {
+  return state.inlinePrompt ? 0 : state.promptHeaderHeight;
+}
+
+/**
+ * Reposition the cursor back to (state.row, state.col) after writing `advanced`
+ * display columns from the cursor's original position at (state.row, state.col).
+ * Handles soft-wrap reflow that bare `\x1b[<n>D` does not.
+ */
+export function rewindAfterAdvance(state: EditorState, advanced: number): void {
+  if (advanced <= 0) return;
+  const cols = terminalColumns(state);
+  const targetTCol = tCol(state, state.row, state.col);
+  if (cols === null) {
+    w(state, `\x1b[${advanced}D`);
+    return;
+  }
+  const totalCols = targetTCol - 1 + advanced;
+  let rowsDown = Math.floor(totalCols / cols);
+  // Deferred-wrap edge: writing exactly cols*k chars leaves the cursor on the
+  // last column of row k-1 (relative) with pending wrap, not on col 0 of row k.
+  if (totalCols > 0 && totalCols % cols === 0) rowsDown -= 1;
+  if (rowsDown > 0) w(state, `\x1b[${rowsDown}A`);
+  w(state, `\x1b[${targetTCol}G`);
+}
+
 export function lastVisualRow(state: EditorState): number {
   return (
     firstVisualRow(state, state.lines.length - 1) +
@@ -272,15 +299,24 @@ export function setStatusWithVisualState(
   }
 }
 
-/** Redraw all lines from fromRow onwards, placing cursor at (targetRow, targetCol) */
+/**
+ * Redraw all lines from fromRow onwards, placing cursor at (targetRow, targetCol).
+ *
+ * `previousCursorVisualRow` overrides the source of the cursor-rewind delta. Pass it when
+ * `state.lines` has already been edited but the terminal cursor is still where it was
+ * *before* the edit (e.g. line-shrinking deletions where computing from the new lines
+ * would underestimate the rewind distance).
+ */
 export function redrawFrom(
   state: EditorState,
   fromRow: number,
   targetRow: number,
   targetCol: number,
+  options?: { previousCursorVisualRow?: number },
 ): void {
   beginBatch(state);
-  const currentVisualRow = cursorVisualRow(state, state.row, state.col);
+  const currentVisualRow =
+    options?.previousCursorVisualRow ?? cursorVisualRow(state, state.row, state.col);
   const fromVisualRow = firstVisualRow(state, fromRow);
   const dr = fromVisualRow - currentVisualRow;
   if (dr < 0) w(state, `\x1b[${-dr}A`);
@@ -401,8 +437,10 @@ export function restoreSnapshot(state: EditorState, snap: Snapshot): void {
 export function redrawAfterDelete(state: EditorState, deletedWidth: number): void {
   const rest = state.lines[state.row].slice(state.col);
   const restW = stringWidth(rest);
-  w(
-    state,
-    `\x1b[${deletedWidth}D${styledInput(state, rest)}${" ".repeat(deletedWidth)}\x1b[${restW + deletedWidth}D`,
-  );
+  // Pre-call cursor sits `deletedWidth` cells to the right of (row, col).
+  // Reflow upward correctly if that distance crossed a soft-wrap.
+  if (deletedWidth > 0) rewindAfterAdvance(state, deletedWidth);
+  w(state, styledInput(state, rest));
+  if (deletedWidth > 0) w(state, " ".repeat(deletedWidth));
+  if (restW + deletedWidth > 0) rewindAfterAdvance(state, restW + deletedWidth);
 }

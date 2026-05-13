@@ -9,6 +9,7 @@ import {
 import {
   beginBatch,
   clearStatus,
+  cursorVisualRow,
   flushBatch,
   lastVisualRow,
   moveTo,
@@ -17,6 +18,7 @@ import {
   redrawFrom,
   renderLine,
   restoreSnapshot,
+  rewindAfterAdvance,
   setStatusWithVisualState,
   styledInput,
   tCol,
@@ -207,8 +209,9 @@ export function insertChar(state: EditorState, ch: string): void {
   const preEditLines = capturePreEdit(state);
   const previousRow = state.row;
   const previousCol = state.col;
-  const hadBelowEditor = Boolean(state.statusText || state.footerText);
-  const previousLastVisualRow = hadBelowEditor ? lastVisualRow(state) : 0;
+  const hadContentBelow =
+    Boolean(state.statusText || state.footerText) || state.row < state.lines.length - 1;
+  const previousLastVisualRow = hadContentBelow ? lastVisualRow(state) : 0;
 
   state.lines[state.row] =
     state.lines[state.row].slice(0, state.col) + ch + state.lines[state.row].slice(state.col);
@@ -218,6 +221,14 @@ export function insertChar(state: EditorState, ch: string): void {
 
   if (preEditLines) {
     applyTransform(state, { type: "insert", char: ch }, preEditLines, state.row, state.col);
+  } else if (
+    !state.isPasting &&
+    hadContentBelow &&
+    lastVisualRow(state) !== previousLastVisualRow
+  ) {
+    state.row = previousRow;
+    state.col = previousCol;
+    redrawFrom(state, previousRow, targetRow, targetCol);
   } else if (state.highlight && !state.isPasting) {
     // Full-line redraw when highlighting is enabled (skipped during paste for performance)
     beginBatch(state);
@@ -225,15 +236,11 @@ export function insertChar(state: EditorState, ch: string): void {
     w(state, renderLine(state, state.row));
     w(state, `\x1b[${tCol(state, state.row, state.col)}G`);
     flushBatch(state);
-  } else if (hadBelowEditor && lastVisualRow(state) !== previousLastVisualRow) {
-    state.row = previousRow;
-    state.col = previousCol;
-    redrawFrom(state, previousRow, targetRow, targetCol);
   } else {
     const rest = state.lines[state.row].slice(state.col);
     w(state, styledInput(state, ch + rest));
     const restW = stringWidth(rest);
-    if (restW > 0) w(state, `\x1b[${restW}D`);
+    if (restW > 0) rewindAfterAdvance(state, restW);
   }
   onContentChanged(state);
 }
@@ -262,6 +269,8 @@ export function handleBackspace(state: EditorState): void {
   if (state.col > 0) {
     saveUndo(state);
     const preEditLines = capturePreEdit(state);
+    const beforeCursorVR = cursorVisualRow(state, state.row, state.col);
+    const beforeLastVR = lastVisualRow(state);
     const deleted = charBeforeIndex(state.lines[state.row], state.col);
     state.col -= deleted.length;
     state.lines[state.row] =
@@ -269,6 +278,10 @@ export function handleBackspace(state: EditorState): void {
       state.lines[state.row].slice(state.col + deleted.length);
     if (preEditLines) {
       applyTransform(state, { type: "backspace" }, preEditLines, state.row, state.col);
+    } else if (lastVisualRow(state) !== beforeLastVR) {
+      redrawFrom(state, state.row, state.row, state.col, {
+        previousCursorVisualRow: beforeCursorVR,
+      });
     } else if (state.highlight) {
       redrawFrom(state, state.row, state.row, state.col);
     } else {
@@ -278,13 +291,16 @@ export function handleBackspace(state: EditorState): void {
   } else if (state.row > 0) {
     saveUndo(state);
     const preEditLines = capturePreEdit(state);
+    const beforeCursorVR = cursorVisualRow(state, state.row, state.col);
     const prevLen = state.lines[state.row - 1].length;
     state.lines[state.row - 1] += state.lines[state.row];
     state.lines.splice(state.row, 1);
     if (preEditLines) {
       applyTransform(state, { type: "backspace" }, preEditLines, state.row - 1, prevLen);
     } else {
-      redrawFrom(state, state.row - 1, state.row - 1, prevLen);
+      redrawFrom(state, state.row - 1, state.row - 1, prevLen, {
+        previousCursorVisualRow: beforeCursorVR,
+      });
     }
     onContentChanged(state);
   }
@@ -295,12 +311,18 @@ export function handleDelete(state: EditorState): void {
   if (state.col < state.lines[state.row].length) {
     saveUndo(state);
     const preEditLines = capturePreEdit(state);
+    const beforeCursorVR = cursorVisualRow(state, state.row, state.col);
+    const beforeLastVR = lastVisualRow(state);
     const deleted = charAtIndex(state.lines[state.row], state.col);
     state.lines[state.row] =
       state.lines[state.row].slice(0, state.col) +
       state.lines[state.row].slice(state.col + deleted.length);
     if (preEditLines) {
       applyTransform(state, { type: "delete" }, preEditLines, state.row, state.col);
+    } else if (lastVisualRow(state) !== beforeLastVR) {
+      redrawFrom(state, state.row, state.row, state.col, {
+        previousCursorVisualRow: beforeCursorVR,
+      });
     } else if (state.highlight) {
       redrawFrom(state, state.row, state.row, state.col);
     } else {
@@ -308,7 +330,7 @@ export function handleDelete(state: EditorState): void {
       const restW = stringWidth(rest);
       const deletedW = charWidth(deleted.codePointAt(0)!);
       w(state, `${styledInput(state, rest)}${" ".repeat(deletedW)}`);
-      if (restW + deletedW > 0) w(state, `\x1b[${restW + deletedW}D`);
+      rewindAfterAdvance(state, restW + deletedW);
     }
     onContentChanged(state);
   } else if (state.row < state.lines.length - 1) {
@@ -329,13 +351,21 @@ export function handleDelete(state: EditorState): void {
 export function deleteToLineStart(state: EditorState): void {
   if (state.col === 0) return;
   saveUndo(state);
+  const beforeCursorVR = cursorVisualRow(state, state.row, state.col);
+  const beforeLastVR = lastVisualRow(state);
   const deletedWidth = stringWidth(state.lines[state.row].slice(0, state.col));
   state.lines[state.row] = state.lines[state.row].slice(state.col);
   state.col = 0;
-  w(state, `\x1b[${pW(state) + 1}G`);
-  w(state, styledInput(state, state.lines[state.row]));
-  w(state, " ".repeat(deletedWidth));
-  w(state, `\x1b[${pW(state) + 1}G`);
+  if (lastVisualRow(state) !== beforeLastVR) {
+    redrawFrom(state, state.row, state.row, state.col, {
+      previousCursorVisualRow: beforeCursorVR,
+    });
+  } else {
+    w(state, `\x1b[${pW(state) + 1}G`);
+    w(state, styledInput(state, state.lines[state.row]));
+    w(state, " ".repeat(deletedWidth));
+    w(state, `\x1b[${pW(state) + 1}G`);
+  }
   onContentChanged(state);
 }
 
@@ -343,8 +373,16 @@ export function deleteToLineStart(state: EditorState): void {
 export function deleteToLineEnd(state: EditorState): void {
   if (state.col >= state.lines[state.row].length) return;
   saveUndo(state);
+  const beforeCursorVR = cursorVisualRow(state, state.row, state.col);
+  const beforeLastVR = lastVisualRow(state);
   state.lines[state.row] = state.lines[state.row].slice(0, state.col);
-  w(state, "\x1b[K");
+  if (lastVisualRow(state) !== beforeLastVR) {
+    redrawFrom(state, state.row, state.row, state.col, {
+      previousCursorVisualRow: beforeCursorVR,
+    });
+  } else {
+    w(state, "\x1b[K");
+  }
   onContentChanged(state);
 }
 
@@ -355,6 +393,8 @@ export function deleteWordBack(state: EditorState): void {
     return;
   }
   saveUndo(state);
+  const beforeCursorVR = cursorVisualRow(state, state.row, state.col);
+  const beforeLastVR = lastVisualRow(state);
   const line = state.lines[state.row];
   let c = state.col;
   while (c > 0 && !isWordChar(charBeforeIndex(line, c))) {
@@ -366,6 +406,12 @@ export function deleteWordBack(state: EditorState): void {
   const deletedWidth = stringWidth(line.slice(c, state.col));
   state.lines[state.row] = line.slice(0, c) + line.slice(state.col);
   state.col = c;
-  redrawAfterDelete(state, deletedWidth);
+  if (lastVisualRow(state) !== beforeLastVR) {
+    redrawFrom(state, state.row, state.row, state.col, {
+      previousCursorVisualRow: beforeCursorVR,
+    });
+  } else {
+    redrawAfterDelete(state, deletedWidth);
+  }
   onContentChanged(state);
 }
